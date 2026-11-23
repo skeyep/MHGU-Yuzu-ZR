@@ -8,6 +8,7 @@
 | **《GU 世界太刀 v1.1 ZR》可循环纳刀改版** | 参考六种风格接入和循环纳刀的做法。以该改版作为世界系全风格行为的对照。 |
 | **zeta233《荒野太刀》v0.3.105** | 实际编译底座，提交 `7f4ad0c`。提供赤刃、蓄力、练气解放及相关的动画、音效和状态机。 [上游发布](https://github.com/zeta233/MHGU-Wilds-Long-Sword/releases/tag/v0.3.105) · [源码](https://github.com/zeta233/MHGU-Wilds-Long-Sword/tree/7f4ad0c) |
 | **MHGU ZR Longsword 1.1.3 RC hotfix1** | 对照 ZR 键位和模拟器兼容处理。整合版以荒野底座的独立控制器编译。该路线的原动作署名为东方朔3923，Eden standalone 适配署名为 robertjuniu。 [动作原作者](https://space.bilibili.com/433307879) |
+| **DB 漫《MHGU ZR Longsword 1.1.4 RC fix1》** | DB 漫基于东方朔版本修改，参考 Akumi-xu v1.1 音库制作新混音。整合版沿用这十段波形并接入 GU 原生混音器，参考下劈的距离调整。 [DB 漫发布](https://www.bilibili.com/video/BV15LyHzmE8) · [Akumi-xu v1.1](https://github.com/Akumi-xu/MHW-Long-Sword-Moveset-for-MHGU/releases/tag/v1.1) |
 
 ## 前置和附加组件
 
@@ -22,6 +23,12 @@
 
 **战斗**。调整大居合成败结算、蓄力保持和气刃阶段、红刃突刺速度，以及练气解放的减伤、范围和追击。镜花构使用 GU 的原生结算。相关平衡数值属于本次 GU 适配。
 
+**RC fix1 适配**。将 48 kHz 立体声混音转成 GU 音效库使用的单声道 DSP-ADPCM，由 GU 负责音量和声音生命周期。见切起手读取消耗前的气刃槽。回旋音效跟实际动作和升阶结算联动。登龙沿刀轴延长 32 游戏单位，半径仍为荒野移植版的 65。大居合的空间判定按荒野胶囊尺寸及随身规则换算成 GU 单位。
+
 **Yuzu 兼容**。补私有动作事件表、修复一批 DSP-ADPCM 音频长度字段、加入 Xbox 按键提示并整合 Forge、跳字与轮盘。更多细节见 [更新记录](CHANGELOG.md)。
 
-[整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.7)中的 `files/source` 保存针对上游的差异补丁、资源处理脚本及构建说明，`files/licenses` 保存随组件附带的许可和声明。各组件保留各自的版权和许可。
+本项目的 [差异补丁](source/changes.patch)、[新增源码和构建说明](source/BUILD.md) 可直接在仓库查看。
+
+连携图的卡片、按键牌和箭头排版参考片手剑教学视频。太刀路线与动作值使用本移植版和 GU 资源。 [视频参考](https://www.bilibili.com/video/BV1GM411b7rw)
+
+[整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.8)中的 `files/source` 保存针对上游的差异补丁、资源处理脚本及构建说明，`files/licenses` 保存随组件附带的许可和声明。各组件保留各自的版权和许可。
