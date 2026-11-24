@@ -3,11 +3,58 @@
 
 /* MT Framework's pad bits after native Switch input mapping. */
 enum { YUZU_PAD_R = 0x200, YUZU_PAD_ZL = 0x400, YUZU_PAD_ZR = 0x800,
-       YUZU_PAD_AX = 0x3000, YUZU_PAD_WEAPON = 0xfa00 };
+       YUZU_PAD_X = 0x1000, YUZU_PAD_AX = 0x3000, YUZU_PAD_WEAPON = 0xfa00 };
 
 typedef struct {
     unsigned held, pending, blocked;
 } YuzuTrigger;
+
+enum { YUZU_DRAW_SPIRIT=1,YUZU_DRAW_THRUST,YUZU_DRAW_NATIVE,YUZU_DRAW_CRIMSON };
+enum { YUZU_DRAW_GROUND=1,YUZU_DRAW_RED_GROUND };
+typedef struct {
+    unsigned previous,waiting,spent,ready,heading;
+    float remaining;
+} YuzuGroundDraw;
+
+/* Reserve both leading keys before GU can use either edge. Only the
+ * ordinary X pulse goes back to the native draw reader. */
+static inline unsigned yuzu_ground_draw_sample(YuzuGroundDraw *s,unsigned bits,
+                                               unsigned ground,unsigned heading,float frames)
+{
+    const unsigned chord=YUZU_PAD_ZR|YUZU_PAD_X;
+    unsigned keys=bits&0xffffu,fresh=keys&~s->previous;
+    s->previous=keys;
+    s->spent&=keys;
+    if(!ground||(keys&~chord)){
+        s->waiting=s->ready=0;
+        return bits&~s->spent;
+    }
+    if(!s->ready&&keys==chord&&!(keys&s->spent)&&(s->waiting||fresh==chord)){
+        if(fresh&YUZU_PAD_ZR)s->heading=heading;
+        s->waiting=0;
+        s->ready=YUZU_DRAW_THRUST;
+        s->spent=keys;
+    }else if(s->waiting){
+        if(frames>0&&frames<30)s->remaining-=frames;
+        if(s->remaining<=0){
+            unsigned solo=s->waiting;
+            s->waiting=0;
+            if(solo==YUZU_PAD_ZR){
+                s->ready=YUZU_DRAW_SPIRIT;
+                /* The ground reader owns the draw request. Once drawn, the
+                 * same physical hold can continue into Spirit Charge. */
+            }else if(ground==YUZU_DRAW_RED_GROUND){
+                s->ready=YUZU_DRAW_CRIMSON;
+                s->spent|=keys&solo;
+            }else return (bits|YUZU_PAD_X)&~s->spent;
+        }
+    }else if(!s->ready&&fresh&&keys==fresh){
+        s->waiting=keys;
+        s->remaining=keys==YUZU_PAD_ZR?6.f:4.2f;
+        s->heading=heading;
+    }
+    return bits&~(s->waiting|s->spent);
+}
 
 /* Sample RT before stripping it from the pad. A press used with LT stays
  * blocked even if LT goes up first. The player input path claims lone presses. */

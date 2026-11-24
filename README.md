@@ -2,13 +2,13 @@
 
 把《世界／冰原》的见切、居合、登龙和《荒野》的赤刃、气刃蓄力、练气解放带进《怪物猎人 GU》。六种狩猎风格都能用这套太刀，勇气刚气刃、武士道无双斩等原生招式仍可使用。
 
-**[下载 v1.2.11 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.11/MHGU-Yuzu-ZR-v1.2.11.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
+**[下载 v1.2.12 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.12/MHGU-Yuzu-ZR-v1.2.12.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
 
 适用 **Windows Yuzu 1734** 和 **MHGU 国际版 1.4.0**（`0100770008DD8000`）。包内有太刀、Forge 1.5.1、伤害跳字、快捷轮盘和可选 Xbox 按键提示。游戏、模拟器、存档和密钥由玩家自行准备。
 
 ## 安装
 
-1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.11.zip`，双击 **Install.cmd**。
+1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.12.zip`，双击 **Install.cmd**。
 2. 如果安装器列出重复的太刀、Forge、跳字或轮盘插件，把对应旧目录移到游戏模组目录之外，再运行安装器。
 3. 到 Yuzu 的游戏属性，启用 **MHGU-ZR-Integrated**。启用 **MHGU-Xbox-Prompts** 可显示 Xbox 按键。切换提示后重启游戏。
 4. 在 Yuzu 控制器配置里确认 Xbox **RT 对应 ZR**，**RB 对应 R**，**LT 对应 ZL**，**LB 对应 L**。
@@ -19,12 +19,12 @@
 
 | Xbox 按键 | 招式 |
 | --- | --- |
-| RT | 气刃斩。收刀时可直接出气刃拔刀，空中调用 GU 原生跳跃气刃。 |
+| RT | 气刃斩。收刀时单按出气刃拔刀，推摇杆出四向移动气刃 I。空中调用 GU 原生跳跃气刃。 |
 | RT＋A | 特殊纳刀。樱花气刃斩、气刃大回旋、武士道和勇气终结斩都可在收势时接。 |
 | RT＋B | 先出一刀，再在这招的派生窗口按 RT＋B 见切。 |
-| RT＋Y | 气刃突刺。开刃后命中可接登龙，红刃登龙后还能接练气解放。 |
+| RT＋Y | 气刃突刺，收刀时也可用。开刃后命中可接登龙，红刃登龙后还能接练气解放。 |
 | 特殊纳刀后 Y／重新按 RT | 小居合／大居合。大居合反击成功且刀命中才升刃，失败保留刃色。 |
-| 在可派生的攻击后长按 RT | 气刃蓄力。气刃 III 后起蓄保留终结段。按住可走停，松键出刀。 |
+| 在可派生的攻击后长按 RT | 气刃蓄力，填充原生气刃槽。气刃 III 后直接满蓄。按住可走停，松键出刀。 |
 | RB | 拔刀时收刀。继续按住并推摇杆可奔跑。 |
 
 红刃普通 **Y** 拔刀出赤刃 I，原地短按 **RT** 可接气刃 I。红刃大回旋收势时，单按 **RT** 接气刃旋转斩，**RT＋A** 接特殊纳刀。空中是单刀还是三连斩，由 GU 原生的风格、刃色和气刃槽条件决定。
@@ -33,7 +33,7 @@
 
 ## 连携图与动作值
 
-卡片上方是 **Xbox 按键**，右侧数字是 **GU 1.4.0 载入整合版后的动作值**。多段攻击逐段列出。实际掉血还受刃色、斩味和肉质影响。 [文字连携和动作值说明](docs/combos.md)
+卡片上方是 **Xbox 按键**，右侧数字是 **GU 1.4.0 载入整合版后的动作值**。多段攻击逐段列出。实际掉血还受刃色、斩味和肉质影响。 [v1.2.12 文字连携和动作值](docs/combos.md) · 下方配图对应 v1.2.11。
 
 ### 公会
 
@@ -41,7 +41,7 @@
 
 ![公会普通攻击、垫刀、后撤和侧移](docs/guild-basic.webp)
 
-**气刃和蓄力。** 短按 RT 走气刃连段，长按走蓄力。气刃 III 后起蓄会记住终结段。蓄力时可迈步、停步和转向，松开 RT 才出刀。
+**气刃和蓄力。** 短按 RT 走气刃连段，长按走蓄力。气刃 I、II 后承接蓄力进度，气刃 III 后直接满蓄。蓄力时可迈步、停步和转向，松开 RT 才出刀。
 
 ![公会重攻击、轻击插入、方向气刃与蓄力分支](docs/guild-spirit.webp)
 
@@ -71,22 +71,17 @@
 
 ## 这版改了什么
 
-- 见切、居合、登龙和见切派生回旋加入 DB 漫 RC fix1 的十段音效。登龙只在有效接触时播放首击音，回旋只在实际升刃时播放升刃反馈。
-- 登龙下劈沿刀身多覆盖 32 游戏单位，横向沿用荒野移植版的宽度。
-- 大居合 GP 改用随人物移动的荒野式胶囊，朝向改变时胶囊同步移动。
-- Xbox 狩技提示采用浅底按键，统一三槽的图集裁切。锁定提示使用原生右摇杆下压图标。
-- 修了单按 A 时旧攻击输入意外触发的情况。RT 打气刃时也不会打开联机聊天，集会所可用 View 呼出键盘。
-- 空中单按 RT 会送出和手动 RT＋Y＋B 一样的原生组合。炼金空中气刃落地也接上了特殊纳刀窗口。
-- 气刃大回旋命中升红时，可接此前缓冲的新 RT。红刃气刃突刺加速到 1.25 倍。
-- 大居合成功反击后短时间减伤，练气解放的霸体期间有 50% 减伤。解放可命中刀身附近及角色周围，原登龙命中目标有追击保底。
-- 镜花构沿用 GU 原生狩技结算。修过新动作缺事件表引起的低地址读取，以及一批音效档的 ADPCM 长度问题。
+- 气刃蓄力直接补原生气刃槽，移除额外进度条。气刃 I 和 II 后承接各自进度，气刃 III 后直接满蓄，松开 RT 接大回旋。蓄力气刃 III 后，带方向的短 RT 也可接大回旋。
+- 收刀 RT＋Y 优先出气刃突刺，方向＋RT 出四向移动气刃 I。红刃普通 Y 拔刀直接出赤刃 I。
+- 恢复 GU 气刃大回旋的原生收刀动作。调整垫刀见切和相邻派生窗口，改善红刃见切接气刃突刺的动画衔接。
+- 修复练气解放圆月斩显示 MAX 时气刃连段或见切受槽量限制的问题。赤刃刀光随刀身移动，红刃的加速延续到兜割落地。
 
 联机时建议双方安装同一版，以便各自加载相同的动作资源。
 
 ## English quick start
 
-For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.11 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.11), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
+For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.12 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.12), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
 
-The moveset brings Foresight, Special Sheathe, Iai, Helm Breaker, Crimson Slash, Spirit Charge, and Spirit Release to all six hunting styles. **RT** (Switch ZR) handles Spirit attacks, including aerial draws. **RT+A** is Special Sheathe, **RT+B** is Foresight, and **RT+Y** is Spirit Thrust. Hold **LB** for the item wheel. Use Type 2 controls for Hunter Arts with **LT+Y**, **LT+X**, and **LT+A**.
+The moveset brings Foresight, Special Sheathe, Iai, Helm Breaker, Crimson Slash, Spirit Charge, and Spirit Release to all six hunting styles. **RT** (Switch ZR) handles Spirit attacks, including native aerial draws. With the sword sheathed, hold a direction with RT for moving Spirit Blade I. **RT+A** is Special Sheathe, **RT+B** is Foresight, and **RT+Y** is Spirit Thrust. Hold **LB** for the item wheel. Use Type 2 controls for Hunter Arts with **LT+Y**, **LT+X**, and **LT+A**.
 
 [Credits and changes](SOURCES.md) · [Changelog](CHANGELOG.md)

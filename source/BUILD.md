@@ -10,7 +10,17 @@ git apply "$integrationSource/changes.patch"
 Copy-Item "$integrationSource/yuzu_zr_input.h" integration/c/yuzu_zr_input.h
 ```
 
-Use the settings in integration/.cargo/config.toml. Set RUSTC_BOOTSTRAP=1 and enable ML_WORLD_COMBAT, ML_WORLD_INPUT_VM, ML_WORLD_PRESENTATION and ML_WILDS_MOVES. Set ML_DEBUG_FORCE=0 for distribution. Set ARM_GCC to a wrapper that runs zig cc -target arm-freestanding-eabi -Wno-unused-command-line-argument with the provided arguments. Build the release ELF with cargo +stable build --release in integration. Convert it with Forge's ARM32 ELF-to-NRO tool and place the result at `files/mod/romfs/nativeNX/plugins/mhw_ls_rebuild.nro` in the integration package. Pair this NRO with both v1.2.8 archives listed below. For the ARM32 converter, use an ARM-capable build of Forge's converter with the ELF input and NRO output paths.
+Use the settings in integration/.cargo/config.toml. Set RUSTC_BOOTSTRAP=1 and enable ML_WORLD_COMBAT, ML_WORLD_INPUT_VM, ML_WORLD_PRESENTATION and ML_WILDS_MOVES. Set ML_DEBUG_FORCE=0 for distribution. Set ARM_GCC to a wrapper that runs zig cc -target arm-freestanding-eabi -Wno-unused-command-line-argument with the provided arguments. Build the release ELF with cargo +stable build --release in integration. Convert it with Forge's ARM32 ELF-to-NRO tool and place the result at `files/mod/romfs/nativeNX/plugins/mhw_ls_rebuild.nro` in the integration package. For v1.2.12, pair the NRO with the restored Roundslash archive described below and the existing world audio archive from v1.2.11. For the ARM32 converter, use an ARM-capable build of Forge's converter with the ELF input and NRO output paths.
+
+## Rebuild the v1.2.12 Roundslash archive
+
+Use `files/mod/romfs/nativeNX/arc/player/quest/w07.arc` from the v1.2.11 integration ZIP as the base archive. Use an untrimmed `w07.arc` from the [World v1.0.7 release](https://github.com/Akumi-xu/MHW-Long-Sword-Moveset-for-MHGU/releases/tag/v1.0.7) as the native reference. From the patched Wilds checkout, run the following command.
+
+```powershell
+python wilds-port/tools/build_single_round.py "v1.2.11-w07.arc" "output-w07.arc" --native-reference "world-v1.0.7-w07.arc"
+```
+
+The script restores the stock MOT5127 descriptor, attachment events and sound cues. Put the output at `files/mod/romfs/nativeNX/arc/player/quest/w07.arc` alongside the v1.2.12 plugin.
 
 ## Rebuild the v1.2.8 audio and hitbox archives
 
