@@ -22,7 +22,9 @@ static inline unsigned yuzu_ground_draw_sample(YuzuGroundDraw *s,unsigned bits,
                                                unsigned ground,unsigned heading,float frames)
 {
     const unsigned chord=YUZU_PAD_ZR|YUZU_PAD_X;
-    unsigned keys=bits&0xffffu,fresh=keys&~s->previous;
+    /* Physical R is the Xbox sprint shoulder. Leave it in the packet for
+     * GU locomotion, and use the physical ZR for the weapon chord. */
+    unsigned keys=(bits&0xffffu)&~YUZU_PAD_R,fresh=keys&~s->previous;
     s->previous=keys;
     s->spent&=keys;
     if(!ground||(keys&~chord)){
