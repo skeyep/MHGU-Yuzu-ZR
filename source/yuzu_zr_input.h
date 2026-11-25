@@ -2,7 +2,7 @@
 #define YUZU_ZR_INPUT_H
 
 /* MT Framework's pad bits after native Switch input mapping. */
-enum { YUZU_PAD_R = 0x200, YUZU_PAD_ZL = 0x400, YUZU_PAD_ZR = 0x800,
+enum { YUZU_PAD_LOCK = 0x4, YUZU_PAD_R = 0x200, YUZU_PAD_ZL = 0x400, YUZU_PAD_ZR = 0x800,
        YUZU_PAD_X = 0x1000, YUZU_PAD_AX = 0x3000, YUZU_PAD_WEAPON = 0xfa00 };
 
 typedef struct {
@@ -12,7 +12,7 @@ typedef struct {
 enum { YUZU_DRAW_SPIRIT=1,YUZU_DRAW_THRUST,YUZU_DRAW_NATIVE,YUZU_DRAW_CRIMSON };
 enum { YUZU_DRAW_GROUND=1,YUZU_DRAW_RED_GROUND };
 typedef struct {
-    unsigned previous,waiting,spent,ready,heading;
+    unsigned previous,waiting,spent,ready,heading,red_y;
     float remaining;
 } YuzuGroundDraw;
 
@@ -24,17 +24,18 @@ static inline unsigned yuzu_ground_draw_sample(YuzuGroundDraw *s,unsigned bits,
     const unsigned chord=YUZU_PAD_ZR|YUZU_PAD_X;
     /* Physical R is the Xbox sprint shoulder. Leave it in the packet for
      * GU locomotion, and use the physical ZR for the weapon chord. */
-    unsigned keys=(bits&0xffffu)&~YUZU_PAD_R,fresh=keys&~s->previous;
+    unsigned keys=(bits&0xffffu)&~(YUZU_PAD_R|YUZU_PAD_LOCK),fresh=keys&~s->previous;
     s->previous=keys;
     s->spent&=keys;
     if(!ground||(keys&~chord)){
-        s->waiting=s->ready=0;
+        s->waiting=s->ready=s->red_y=0;
         return bits&~s->spent;
     }
     if(!s->ready&&keys==chord&&!(keys&s->spent)&&(s->waiting||fresh==chord)){
         if(fresh&YUZU_PAD_ZR)s->heading=heading;
         s->waiting=0;
         s->ready=YUZU_DRAW_THRUST;
+        s->red_y=0;
         s->spent=keys;
     }else if(s->waiting){
         if(frames>0&&frames<30)s->remaining-=frames;
@@ -52,10 +53,38 @@ static inline unsigned yuzu_ground_draw_sample(YuzuGroundDraw *s,unsigned bits,
         }
     }else if(!s->ready&&fresh&&keys==fresh){
         s->waiting=keys;
+        s->red_y=keys==YUZU_PAD_X&&ground==YUZU_DRAW_RED_GROUND;
         s->remaining=keys==YUZU_PAD_ZR?6.f:4.2f;
         s->heading=heading;
     }
     return bits&~(s->waiting|s->spent);
+}
+
+/* A stock draw request can arrive before the buffered Y is replayed.
+ * RB and target lock are independent of the weapon button. */
+static inline unsigned yuzu_ground_crimson_request(const YuzuGroundDraw *draw,
+                                                     unsigned bits,unsigned rt_held)
+{
+    unsigned keys=(bits&0xffffu)&~(YUZU_PAD_R|YUZU_PAD_LOCK);
+    if(rt_held||(keys&~YUZU_PAD_X))return 0;
+    if(draw&&draw->ready&&draw->ready!=YUZU_DRAW_CRIMSON)return 0;
+    return keys==YUZU_PAD_X||(draw&&(draw->waiting==YUZU_PAD_X||draw->ready==YUZU_DRAW_CRIMSON));
+}
+
+/* Some native draw handlers raise DRAWN before requesting their first cut.
+ * A previously reserved physical Y still owns that transition. */
+static inline unsigned yuzu_native_crimson_draw(const YuzuGroundDraw *draw,
+    unsigned already_drawn,unsigned bits,unsigned rt_held)
+{
+    return (!already_drawn||(draw&&draw->red_y))&&
+        yuzu_ground_crimson_request(draw,bits,rt_held);
+}
+
+static inline void yuzu_ground_draw_consume(YuzuGroundDraw *draw,unsigned bits)
+{
+    if(draw->red_y||draw->ready==YUZU_DRAW_CRIMSON)
+        draw->spent|=(draw->previous|bits)&YUZU_PAD_X;
+    draw->ready=draw->waiting=draw->red_y=0;
 }
 
 /* Sample RT before stripping it from the pad. A press used with LT stays
