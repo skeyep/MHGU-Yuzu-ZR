@@ -858,7 +858,7 @@ index 06203ec..8456ad9 100644
      return (WDecision){0};
  }
 diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
-index 938b648..eef421f 100644
+index 938b648..045004d 100644
 --- a/integration/c/world_adapter.inc
 +++ b/integration/c/world_adapter.inc
 @@ -5,14 +5,13 @@ static unsigned wilds_focus_active;
@@ -2284,7 +2284,7 @@ index 938b648..eef421f 100644
  #endif
      o.contact=world_contact(a);
  #if ML_WILDS_MOVES
-@@ -2046,8 +2266,29 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2046,8 +2266,34 @@ static unsigned world_update(void *a,const MLObservation *b)
          log_event("wilds_potion_draw",(u32)(uptr)a,o.state,o.base.native_action,o.base.magnitude);
      }
  #endif
@@ -2299,11 +2299,16 @@ index 938b648..eef421f 100644
 +    }
      WDecision d=w_step(&world,&o);
  #if ML_WILDS_MOVES
-+    if(d.kind==W_KEEP){
-+        if(!o.drawn&&!world.move&&!o.hunter_art_input)d=world_ground_draw_step(a,&o);
-+        else{
-+            d=w_recover_crimson_draw(&world,&o);
-+            if(d.kind==W_ENTER){
++    /* A continuing attack can earn rank, gauge and regeneration on this
++     * frame. Only look for a draw outside an owned move, and commit earned
++     * effects before replacing the controller decision with a real draw. */
++    if(d.kind==W_KEEP&&!world.move){
++        unsigned sheathed=!o.drawn&&!o.hunter_art_input;
++        WDecision draw=sheathed?world_ground_draw_step(a,&o):w_recover_crimson_draw(&world,&o);
++        if(draw.kind!=W_KEEP){
++            world_pay(a,d);
++            d=draw;
++            if(!sheathed&&d.kind==W_ENTER){
 +                int pad=ml_pad_index(ml_pad_base());
 +                if(pad>=0)yuzu_ground_draw_consume(&world_ground_draw[pad],world_pad_bits());
 +                world_wilds_pending=0;
@@ -2314,7 +2319,14 @@ index 938b648..eef421f 100644
      if(d.kind==W_NATIVE&&d.native_action==130&&d.valor_slide){
          valor_link=(__typeof__(valor_link)){.actor=a,.epoch=byte(a,AREA),.owner=130,.moving=1,
              .heading=d.valor_slide_heading,.input_heading=d.valor_slide_input};
-@@ -2080,6 +2321,15 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2074,12 +2320,21 @@ static unsigned world_update(void *a,const MLObservation *b)
+         wilds_roll_input=0;
+         if(d.kind!=W_ENTER){
+             WDecision requested=w_wilds_enter(&world,&request,mv);
+-            if(requested.kind!=W_KEEP)d=requested;
++            if(requested.kind!=W_KEEP){world_pay(a,d);d=requested;}
+         }
+     }
  #endif
  #if ML_DEBUG_FORCE
      /* 调试台：ZL + Y 依次强制起招（他的六招 + 我们的五招），用来验证"我们能不能从代码里驱动他的状态机"。 */
@@ -2330,7 +2342,7 @@ index 938b648..eef421f 100644
      if(world_debug_pending){unsigned mv=world_debug_pending;world_debug_pending=0;
          d=w_debug_enter(&world,&o,mv);
  #if ML_WILDS_MOVES
-@@ -2093,11 +2343,6 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2093,11 +2348,6 @@ static unsigned world_update(void *a,const MLObservation *b)
      world_commit(a,d);w_input_finish(&world,&o,d);
  #if ML_WILDS_MOVES
      if(wilds_clip(world.source))wilds_hit_tick(a);
@@ -2342,7 +2354,7 @@ index 938b648..eef421f 100644
      /* Horizontal root is authored in the LMT's native usage-4 track. */
  #endif
  #if ML_WILDS_MOVES && ML_WORLD_INPUT_VM
-@@ -2162,10 +2407,12 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2162,10 +2412,12 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
              /* 我们的五招用自己那套判定（wilds_rows）；他这套按事件开行会 world_close_hit
               * 把刚开的行关掉（练气解放"掉刃色但没伤害"就是这个），所以这里跳过。 */
@@ -2358,7 +2370,7 @@ index 938b648..eef421f 100644
  #endif
          }
          world_physics_tick(a);
-@@ -2174,7 +2421,7 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2174,7 +2426,7 @@ static unsigned world_update(void *a,const MLObservation *b)
          }
      }
      return world.move||d.kind==W_ENTER||d.kind==W_NATIVE||d.kind==W_NATIVE_R||d.kind==W_ROLL||d.kind==W_IDLE;
@@ -2367,7 +2379,7 @@ index 938b648..eef421f 100644
  #include "world_damage_compat.h"
  static unsigned world_install(void)
  {
-@@ -2187,10 +2434,8 @@ static unsigned world_install(void)
+@@ -2187,10 +2439,8 @@ static unsigned world_install(void)
      const u32 entries[][3]={
  #if ML_WILDS_MOVES
          {0xbac204,0xe92d4ff0u,0xe24dd014u},
@@ -2379,7 +2391,7 @@ index 938b648..eef421f 100644
          {0x2807a0,0xe30114a4u,0xe7902001u},
  #endif
          {0x2a309c,0xe92d4070u,0xe1a04000u},
-@@ -2245,18 +2490,10 @@ static unsigned world_install(void)
+@@ -2245,18 +2495,10 @@ static unsigned world_install(void)
      forge_hook_create((void *)(main_base+0x2b7240),(void *)world_open_hit,(void **)&world_original_open_hit);
      if(!world_original_open_hit)return 0;
      forge_hook_create((void *)(main_base+0xbac204),(void *)world_pad_map,(void **)&world_original_pad_map);
