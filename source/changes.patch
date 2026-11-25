@@ -854,7 +854,7 @@ index 06203ec..d0d09c4 100644
      return (WDecision){0};
  }
 diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
-index 938b648..eb30d14 100644
+index 938b648..8436de3 100644
 --- a/integration/c/world_adapter.inc
 +++ b/integration/c/world_adapter.inc
 @@ -5,14 +5,13 @@ static unsigned wilds_focus_active;
@@ -2264,7 +2264,7 @@ index 938b648..eb30d14 100644
  #endif
      o.contact=world_contact(a);
  #if ML_WILDS_MOVES
-@@ -2046,8 +2250,19 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2046,8 +2250,29 @@ static unsigned world_update(void *a,const MLObservation *b)
          log_event("wilds_potion_draw",(u32)(uptr)a,o.state,o.base.native_action,o.base.magnitude);
      }
  #endif
@@ -2279,12 +2279,22 @@ index 938b648..eb30d14 100644
 +    }
      WDecision d=w_step(&world,&o);
  #if ML_WILDS_MOVES
-+    if(d.kind==W_KEEP&&!o.drawn&&!world.move&&!o.hunter_art_input)
-+        d=world_ground_draw_step(a,&o);
++    if(d.kind==W_KEEP){
++        if(!o.drawn&&!world.move&&!o.hunter_art_input)d=world_ground_draw_step(a,&o);
++        else{
++            d=w_recover_crimson_draw(&world,&o);
++            if(d.kind==W_ENTER){
++                int pad=ml_pad_index(ml_pad_base());
++                if(pad>=0)yuzu_ground_draw_consume(&world_ground_draw[pad],world_pad_bits());
++                world_wilds_pending=0;
++                log_event("world_crimson_draw_recover",o.base.actor,o.base.native_action,o.base.motion,d.source);
++            }
++        }
++    }
      if(d.kind==W_NATIVE&&d.native_action==130&&d.valor_slide){
          valor_link=(__typeof__(valor_link)){.actor=a,.epoch=byte(a,AREA),.owner=130,.moving=1,
              .heading=d.valor_slide_heading,.input_heading=d.valor_slide_input};
-@@ -2080,6 +2295,15 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2080,6 +2305,15 @@ static unsigned world_update(void *a,const MLObservation *b)
  #endif
  #if ML_DEBUG_FORCE
      /* 调试台：ZL + Y 依次强制起招（他的六招 + 我们的五招），用来验证"我们能不能从代码里驱动他的状态机"。 */
@@ -2300,7 +2310,7 @@ index 938b648..eb30d14 100644
      if(world_debug_pending){unsigned mv=world_debug_pending;world_debug_pending=0;
          d=w_debug_enter(&world,&o,mv);
  #if ML_WILDS_MOVES
-@@ -2093,11 +2317,6 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2093,11 +2327,6 @@ static unsigned world_update(void *a,const MLObservation *b)
      world_commit(a,d);w_input_finish(&world,&o,d);
  #if ML_WILDS_MOVES
      if(wilds_clip(world.source))wilds_hit_tick(a);
@@ -2312,7 +2322,7 @@ index 938b648..eb30d14 100644
      /* Horizontal root is authored in the LMT's native usage-4 track. */
  #endif
  #if ML_WILDS_MOVES && ML_WORLD_INPUT_VM
-@@ -2162,10 +2381,12 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2162,10 +2391,12 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
              /* 我们的五招用自己那套判定（wilds_rows）；他这套按事件开行会 world_close_hit
               * 把刚开的行关掉（练气解放"掉刃色但没伤害"就是这个），所以这里跳过。 */
@@ -2328,7 +2338,7 @@ index 938b648..eb30d14 100644
  #endif
          }
          world_physics_tick(a);
-@@ -2174,7 +2395,7 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2174,7 +2405,7 @@ static unsigned world_update(void *a,const MLObservation *b)
          }
      }
      return world.move||d.kind==W_ENTER||d.kind==W_NATIVE||d.kind==W_NATIVE_R||d.kind==W_ROLL||d.kind==W_IDLE;
@@ -2337,7 +2347,7 @@ index 938b648..eb30d14 100644
  #include "world_damage_compat.h"
  static unsigned world_install(void)
  {
-@@ -2187,10 +2408,8 @@ static unsigned world_install(void)
+@@ -2187,10 +2418,8 @@ static unsigned world_install(void)
      const u32 entries[][3]={
  #if ML_WILDS_MOVES
          {0xbac204,0xe92d4ff0u,0xe24dd014u},
@@ -2349,7 +2359,7 @@ index 938b648..eb30d14 100644
          {0x2807a0,0xe30114a4u,0xe7902001u},
  #endif
          {0x2a309c,0xe92d4070u,0xe1a04000u},
-@@ -2245,18 +2464,10 @@ static unsigned world_install(void)
+@@ -2245,18 +2474,10 @@ static unsigned world_install(void)
      forge_hook_create((void *)(main_base+0x2b7240),(void *)world_open_hit,(void **)&world_original_open_hit);
      if(!world_original_open_hit)return 0;
      forge_hook_create((void *)(main_base+0xbac204),(void *)world_pad_map,(void **)&world_original_pad_map);
@@ -2837,7 +2847,7 @@ index 47cb139..0ed6c8d 100644
          WDecision d=w_leave(s);d.kind=W_ROLL;
          d.heading=b->magnitude>=50?b->input_heading:b->heading;return d;
 diff --git a/integration/c/world_core.c b/integration/c/world_core.c
-index b781341..165e92c 100644
+index b781341..85e353a 100644
 --- a/integration/c/world_core.c
 +++ b/integration/c/world_core.c
 @@ -94,10 +94,10 @@ unsigned w_source(unsigned motion)
@@ -3036,20 +3046,21 @@ index b781341..165e92c 100644
  }
  static void spirit_round_reward(WDecision *d,unsigned rank)
  {
-@@ -355,6 +479,12 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
+@@ -355,6 +479,13 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
      *heading=b->heading;
      *direction=0;
      if(b->magnitude<50)return W_CRIMSON_STATIONARY;
-+    /* Red Y from a sheathed stance uses the draw slash, even when running.
-+     * The stick can aim the cut but must not select an unsheathed variant. */
++    /* A sheathed moving draw uses forward Crimson I in the input direction.
++     * The retreat variant is only available after the blade is drawn. */
 +    if(!o->drawn){
 +        *heading=b->input_heading;
-+        return W_CRIMSON_STATIONARY;
++        *direction=W_CRIMSON_DIRECTIONAL;
++        return W_CRIMSON_MOVING;
 +    }
      unsigned reference=directional_facing(o,b->input_heading);
      int angle=ml_heading_delta(b->input_heading,reference);
      *heading=b->input_heading;
-@@ -371,15 +501,17 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
+@@ -371,15 +502,17 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
  
  static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned mask)
  {
@@ -3068,7 +3079,7 @@ index b781341..165e92c 100644
  #if ML_WILDS_MOVES
      if(move==W_FORESIGHT&&o->rank==3)s->source=918;
      s->valor_foresight=o->valor&&s->source==918;
-@@ -387,14 +519,16 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -387,14 +520,16 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
      if(move==W_CHIJIN)s->source=crimson_one(o,&crimson_heading,&d.crimson_direction);
  #endif
      s->wilds_helm_red=(move>=W_RISE&&move<=W_LAND)?helm_red:0;
@@ -3089,7 +3100,7 @@ index b781341..165e92c 100644
      s->wilds_previous=o->base.held;s->wilds_sample=o->base.sample_sequence;
      s->slot=w_clip(s->source)->slot;s->bound=0;s->last_frame=0;
      s->counter_success=s->hit_success=s->rank_paid=s->follow_ready=0;
-@@ -416,7 +550,7 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -416,7 +551,7 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
      }
  #if ML_WILDS_MOVES
      if(move==W_CHIJIN)s->heading=crimson_heading;
@@ -3098,7 +3109,7 @@ index b781341..165e92c 100644
  #endif
      d.source=s->source;d.slot=s->slot;d.heading=s->heading;
  #if ML_WILDS_MOVES
-@@ -433,8 +567,19 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -433,8 +568,19 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
          const WMotionLink *link=w_motion_link(d.source,previous,W_BANK_W03_00,o->base.animation_frame);
          if(link){d.motion_contract=1;d.start=s->entry_start=link->start;d.blend=link->blend;d.speed=link->speed;}
      }
@@ -3119,7 +3130,7 @@ index b781341..165e92c 100644
  #if ML_WILDS_MOVES
          if(o->rank==3){s->foresight_gauge=1;d.gauge_clear=0;}
  #endif
-@@ -444,26 +589,33 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -444,26 +590,33 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
      return d;
  }
  WDecision w_debug_enter(WState *s,const WObservation *o,unsigned move){return enter(s,o,move,0);}
@@ -3158,7 +3169,7 @@ index b781341..165e92c 100644
      }
  #else
      (void)s;(void)o;
-@@ -476,11 +628,22 @@ unsigned w_red_draw(const WObservation *o)
+@@ -476,11 +629,35 @@ unsigned w_red_draw(const WObservation *o)
          (o->state==1||o->state==2)&&o->base.native_action<=5;
  }
  #if ML_WILDS_MOVES
@@ -3181,10 +3192,23 @@ index b781341..165e92c 100644
 +    if(o->base.held==(ML_R|ML_X))return enter(s,o,W_THRUST,ML_R|ML_X);
 +    if(o->base.held==ML_X&&w_red_draw(o))return enter(s,o,W_CHIJIN,ML_X);
 +    return w_sheathed_slide(o)?w_wilds_enter(s,o,W_SLIDE):(WDecision){0};
++}
++WDecision w_recover_crimson_draw(WState *s,const WObservation *o)
++{
++    const MLObservation *b=&o->base;
++    /* GU can enter action 3 and set DRAWN through its native locomotion
++     * path. MOT5115 is its draw startup; MOT5101 is the later Step Slash. */
++    if(s->move||o->state!=16||!o->drawn||o->rank!=3||!o->grounded||
++       !o->alive||!o->resources_ready||o->hunter_art_input||
++       b->native_action!=3||b->motion!=0x573||!(b->animation_frame>=0&&b->animation_frame<36))
++        return (WDecision){0};
++    WObservation draw=*o;
++    draw.drawn=0;
++    return enter(s,&draw,W_CHIJIN,ML_X);
  }
  #endif
  WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move)
-@@ -496,10 +659,12 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move)
+@@ -496,10 +673,12 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move)
      if(move==W_CHIJIN&&o->rank!=3)return (WDecision){0};
      if(move==W_RELEASE&&(s->move!=W_LAND||!s->wilds_helm_red||
         o->rank<1+s->helm_cost_pending))return (WDecision){0};
@@ -3200,7 +3224,7 @@ index b781341..165e92c 100644
      return d;
  }
  
-@@ -587,23 +752,38 @@ void w_input_finish(WState *s,const WObservation *o,WDecision d)
+@@ -587,23 +766,38 @@ void w_input_finish(WState *s,const WObservation *o,WDecision d)
  {
  #if ML_WORLD_INPUT_VM
      const WEvent *event=0;unsigned source=0;
@@ -3242,7 +3266,7 @@ index b781341..165e92c 100644
  WDecision w_step(WState *s,const WObservation *o)
  {
      WDecision d={0};const MLObservation *b=&o->base;
-@@ -614,7 +794,9 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -614,7 +808,9 @@ WDecision w_step(WState *s,const WObservation *o)
           * the previous actor's pending move. Held transition keys stay spent. */
          if(s->actor==b->actor&&s->actor)d=w_leave(s);
          w_reset(s);s->actor=b->actor;s->epoch=b->epoch;
@@ -3253,7 +3277,7 @@ index b781341..165e92c 100644
      }
  #if ML_WILDS_MOVES && ML_WORLD_INPUT_VM
      if(!o->drawn){
-@@ -626,7 +808,19 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -626,7 +822,19 @@ WDecision w_step(WState *s,const WObservation *o)
  #if ML_WILDS_MOVES
      sheathing|=(s->source==917&&b->animation_frame>=W_ROUND_SHEATHE_FRAME)||(s->source==904&&b->animation_frame>=W_RELEASE_SHEATHE_FRAME);
  #endif
@@ -3274,7 +3298,7 @@ index b781341..165e92c 100644
      w_keys_tick(&s->keys,b);
      if(s->move&&!w_private(o->state,b->native_action)){d=combine(d,w_leave(s));d.kind=W_ABORT;return d;}
      unsigned new_sample=s->sample!=b->sample_sequence;
-@@ -651,7 +845,7 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -651,7 +859,7 @@ WDecision w_step(WState *s,const WObservation *o)
          }
          if(s->move==W_BIG&&frame>=37&&!s->rank_paid){
  #if ML_WILDS_MOVES
@@ -3283,7 +3307,7 @@ index b781341..165e92c 100644
                  s->rank_paid=1;
                  if(o->rank<3){d.rank_delta+=1;if(o->rank==2)d.gauge_fill=1;}
              }
-@@ -675,6 +869,17 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -675,6 +883,17 @@ WDecision w_step(WState *s,const WObservation *o)
          s->rank_paid=1;spirit_round_reward(&d,o->rank);
      }
  #if ML_WORLD_INPUT_VM
@@ -3302,7 +3326,7 @@ index b781341..165e92c 100644
  #endif
      if(s->move==W_GROUND&&s->main_source&&
 diff --git a/integration/c/world_core.h b/integration/c/world_core.h
-index 033f8ef..993a989 100644
+index 033f8ef..83d7167 100644
 --- a/integration/c/world_core.h
 +++ b/integration/c/world_core.h
 @@ -21,10 +21,22 @@ static inline unsigned w_focus_finisher_end(unsigned source)
@@ -3465,15 +3489,16 @@ index 033f8ef..993a989 100644
  }
  unsigned w_guild_attack(unsigned action);
  unsigned w_guild_source(unsigned state,unsigned action,unsigned motion);
-@@ -147,6 +209,7 @@ unsigned w_private(unsigned state,unsigned action);
+@@ -147,6 +209,8 @@ unsigned w_private(unsigned state,unsigned action);
  unsigned w_red_draw(const WObservation *o);
  #if ML_WILDS_MOVES
  unsigned w_sheathed_slide(const WObservation *o);
 +WDecision w_sheathed_attack(WState *s,const WObservation *o);
++WDecision w_recover_crimson_draw(WState *s,const WObservation *o);
  void w_reserve_spirit_crimson(WState *s,const MLObservation *input);
  #endif
  unsigned w_native_roll(unsigned state,unsigned action);
-@@ -155,6 +218,7 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move);
+@@ -155,6 +219,7 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move);
  WDecision w_iai_press(WState *s,const WObservation *o);
  unsigned w_iai_ready(const WState *s,const WObservation *o);
  WDecision w_debug_enter(WState *s,const WObservation *o,unsigned move);
@@ -4460,7 +4485,7 @@ index 6c2a894..158fb34 100644
  
  if __name__ == '__main__':
 diff --git a/wilds-port/tools/test_wilds_controller.c b/wilds-port/tools/test_wilds_controller.c
-index 4fda88b..62b2ca1 100644
+index 4fda88b..f047941 100644
 --- a/wilds-port/tools/test_wilds_controller.c
 +++ b/wilds-port/tools/test_wilds_controller.c
 @@ -1,12 +1,36 @@
@@ -4748,7 +4773,7 @@ index 4fda88b..62b2ca1 100644
  static void iai_held_entry(void)
  {
   WState s={0};WObservation o=obs();o.base.held=ML_R;
-@@ -222,14 +378,559 @@ static void short_spirit_costs(void)
+@@ -222,14 +378,573 @@ static void short_spirit_costs(void)
    assert(!s.wilds_r_pending);
   }
  }
@@ -4990,10 +5015,11 @@ index 4fda88b..62b2ca1 100644
 +   o=obs();o.state=state;o.drawn=0;o.base.held=ML_X;o.base.magnitude=direction*100;
 +   o.base.heading=1000;o.base.input_heading=17384;
 +   s=(WState){0};d=w_sheathed_attack(&s,&o);
-+   assert(d.kind==W_ENTER&&d.source==W_CRIMSON_STATIONARY&&!d.crimson_direction);
++   assert(d.kind==W_ENTER&&d.source==(direction?W_CRIMSON_MOVING:W_CRIMSON_STATIONARY));
++   assert(d.crimson_direction==(direction?W_CRIMSON_DIRECTIONAL:0));
 +   assert(d.heading==(direction?o.base.input_heading:o.base.heading));
 +   s=(WState){0};d=w_wilds_enter(&s,&o,W_CHIJIN);
-+   assert(d.kind==W_ENTER&&d.source==W_CRIMSON_STATIONARY);
++   assert(d.kind==W_ENTER&&d.source==(direction?W_CRIMSON_MOVING:W_CRIMSON_STATIONARY));
 +   o.drawn=1;s=(WState){0};d=w_wilds_enter(&s,&o,W_CHIJIN);
 +   assert(d.source==(direction?W_CRIMSON_MOVING:W_CRIMSON_STATIONARY));
 +  }
@@ -5037,7 +5063,20 @@ index 4fda88b..62b2ca1 100644
 + assert(yuzu_ground_draw_sample(&draw,sprint_lock|YUZU_PAD_X,YUZU_DRAW_RED_GROUND,0,1)==sprint_lock);
 + assert(yuzu_ground_draw_sample(&draw,sprint_lock|YUZU_PAD_X|YUZU_PAD_ZR,YUZU_DRAW_RED_GROUND,0,1)==sprint_lock);
 + assert(draw.ready==YUZU_DRAW_THRUST&&!draw.red_y);
-+ puts("PASS: Crimson Y owns the stock draw request while running, locked on, and after the native DRAWN flag changes");
++ for(unsigned rank=2;rank<=3;rank++){
++  o=obs();o.rank=rank;o.state=16;o.base.native_action=3;o.base.motion=0x573;
++  o.base.animation_frame=0;o.base.magnitude=100;o.base.input_heading=16384;
++  s=(WState){0};d=w_recover_crimson_draw(&s,&o);
++  if(rank==3)assert(d.kind==W_ENTER&&d.source==W_CRIMSON_MOVING&&d.heading==16384);
++  else assert(d.kind==W_KEEP);
++ }
++ s=(WState){0};o.base.motion=0x565;
++ assert(w_recover_crimson_draw(&s,&o).kind==W_KEEP);
++ o.base.motion=0x573;o.base.animation_frame=36;
++ assert(w_recover_crimson_draw(&s,&o).kind==W_KEEP);
++ o.base.animation_frame=0;o.base.magnitude=0;
++ assert(w_recover_crimson_draw(&s,&o).source==W_CRIMSON_STATIONARY);
++ puts("PASS: first native draw startup redirects to Crimson; idle and moving draw variants stay distinct");
 +
 + o=obs();s=(WState){.move=W_FORESIGHT,.source=918};
 + assert(tick(&s,&o,ML_R|ML_X,50).kind==W_KEEP);
@@ -5309,7 +5348,7 @@ index 4fda88b..62b2ca1 100644
   WObservation o=obs();WState s={0};WDecision d;
   assert(w_wilds_enter(&s,&o,W_RELEASE).kind==W_KEEP);
   s.move=W_LAND;s.wilds_helm_red=0;assert(w_wilds_enter(&s,&o,W_RELEASE).kind==W_KEEP);
-@@ -276,7 +977,7 @@ int main(void){
+@@ -276,7 +991,7 @@ int main(void){
   o.base.gauge=10;assert(w_wilds_enter(&s,&o,W_SLIDE).gauge_delta==-10);
   for(unsigned stage=2;stage<=4;stage++){
    o=obs();o.base.held=ML_R;w_reset(&s);wilds_charge(&s,&o,stage);
@@ -5318,7 +5357,7 @@ index 4fda88b..62b2ca1 100644
    assert(stage==2?(d.kind==W_NATIVE&&d.native_action==23):d.source==(stage==3?902:917));
   }
   o=obs();w_reset(&s);w_wilds_enter(&s,&o,W_SLIDE);
-@@ -351,9 +1052,9 @@ int main(void){
+@@ -351,9 +1066,9 @@ int main(void){
   for(unsigned rank=0;rank<4;rank++){
    o=obs();o.rank=rank;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
    s.actor=1;s.epoch=1;o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);o.base.animation_frame=37;o.counter=1;
@@ -5330,7 +5369,7 @@ index 4fda88b..62b2ca1 100644
    o.base.sample_sequence++;assert(!w_step(&s,&o).red_recovery);
    o=obs();o.rank=rank;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
    assert(w_leave(&s).rank_delta==0);
-@@ -380,25 +1081,18 @@ int main(void){
+@@ -380,25 +1095,18 @@ int main(void){
    if(i<2)assert(d.kind==W_KEEP);
   }
   assert(d.kind==W_ENTER&&d.move==W_CHARGE&&s.wilds_stage==2);
@@ -5361,7 +5400,7 @@ index 4fda88b..62b2ca1 100644
   for(unsigned large=0;large<2;large++){
    o=obs();w_reset(&s);s.actor=1;s.epoch=1;
    d=w_debug_enter(&s,&o,W_SHEATHE);
-@@ -424,8 +1118,15 @@ int main(void){
+@@ -424,8 +1132,15 @@ int main(void){
   s.actor=1;s.epoch=1;o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);
   o.contact=o.counter=1;assert(!w_step(&s,&o).gauge_fill);
   o.rank=2;w_reset(&s);d=w_debug_enter(&s,&o,W_FORESIGHT);assert(d.source==140&&d.gauge_clear);
@@ -5378,7 +5417,7 @@ index 4fda88b..62b2ca1 100644
   o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);
   d=w_step(&s,&o);assert(d.source==W_CRIMSON_STATIONARY&&d.rank_delta==1&&d.gauge_fill&&s.rank==3);
   o=obs();o.rank=1;o.base.gauge=0;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
-@@ -474,6 +1175,7 @@ int main(void){
+@@ -474,6 +1189,7 @@ int main(void){
   o.base.sample_sequence++;assert(!w_step(&s,&o).rank_delta);
  
   puts("PASS: chains, holds, chords, sheath recovery, Iai, red draw, five Spirit I branches, red Foresight");
