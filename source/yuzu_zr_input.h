@@ -166,4 +166,13 @@ static inline unsigned yuzu_zr_input(unsigned bits, unsigned supported, unsigned
     return bits & ~YUZU_PAD_ZR;
 }
 
+/* Build the weapon controller's view before GU adds aerial face buttons or
+ * replays a Valor guard. Native R can also mean sprint while sheathed. */
+static inline unsigned yuzu_combat_pad(unsigned physical,unsigned reserved,unsigned drawn,unsigned air_draw)
+{
+    unsigned combat=yuzu_zr_input(reserved&~YUZU_PAD_R,1,drawn||air_draw);
+    if(combat&YUZU_PAD_R)combat&=~(0xf000u&~physical);
+    return combat;
+}
+
 #endif
