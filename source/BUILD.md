@@ -10,7 +10,7 @@ git apply "$integrationSource/changes.patch"
 Copy-Item "$integrationSource/yuzu_zr_input.h" integration/c/yuzu_zr_input.h
 ```
 
-Use the settings in integration/.cargo/config.toml. Set RUSTC_BOOTSTRAP=1 and enable ML_WORLD_COMBAT, ML_WORLD_INPUT_VM, ML_WORLD_PRESENTATION and ML_WILDS_MOVES. Set ML_DEBUG_FORCE=0 for distribution. Set ARM_GCC to a wrapper that runs zig cc -target arm-freestanding-eabi -Wno-unused-command-line-argument with the provided arguments. Build the release ELF with cargo +stable build --release in integration. Convert it with Forge's ARM32 ELF-to-NRO tool and place the result at `files/mod/romfs/nativeNX/plugins/mhw_ls_rebuild.nro` in the integration package. For v1.2.22, pair the NRO with the v1.2.12 Roundslash and world audio archives. The Roundslash archive can be rebuilt as described below. For the ARM32 converter, use an ARM-capable build of Forge's converter with the ELF input and NRO output paths.
+Use the settings in integration/.cargo/config.toml. Set RUSTC_BOOTSTRAP=1 and enable ML_WORLD_COMBAT, ML_WORLD_INPUT_VM, ML_WORLD_PRESENTATION and ML_WILDS_MOVES. Set ML_DEBUG_FORCE=0 for distribution. Set ARM_GCC to a wrapper that runs zig cc -target arm-freestanding-eabi -Wno-unused-command-line-argument with the provided arguments. Build the release ELF with cargo +stable build --release in integration. Convert it with Forge's ARM32 ELF-to-NRO tool and place the result at `files/mod/romfs/nativeNX/plugins/mhw_ls_rebuild.nro` in the integration package. For v1.2.23, pair the NRO with the v1.2.12 Roundslash and world audio archives. The Roundslash archive can be rebuilt as described below. For the ARM32 converter, use an ARM-capable build of Forge's converter with the ELF input and NRO output paths.
 
 ## Rebuild the v1.2.12 Roundslash archive
 
@@ -76,3 +76,7 @@ python build_xbox_prompts.py <romfs> ../xbox-prompts/romfs <wilds-port/tools> --
 ```
 
 The script draws Xbox glyphs and uses the same Hunter Art slot 2 layout in both packs. Yuzu loads the Xbox quest UI first when both add-ons are enabled. [Prompt sheet coordinate reference](https://github.com/morerokk/MHGURecomp/blob/master/runtime/hle/prompts.c)
+
+## Camera diagnostics
+
+The Yuzu log records eight consecutive player-camera updates every two simulation seconds while the local Long Sword hunter has a live viewport. The four hexadecimal fields of `camera_pose` are pitch and yaw (16 bits each), eye-to-hunter distance in sixteenths of a game unit, native state and action (16 bits each), and raw button bits with bit 31 set if the Iai controller wrote the camera in that update. The angles and distance are sampled after the native camera update. These samples, Iai turn requests and completions, and `helm_interrupt_exit` continue after the ordinary action log reaches its limit.
