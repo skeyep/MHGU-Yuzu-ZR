@@ -2,7 +2,9 @@
 
 把《世界／冰原》的见切、居合、登龙和《荒野》的赤刃、气刃蓄力、练气解放带进《怪物猎人 GU》。六种狩猎风格都能用这套太刀，勇气刚气刃、武士道无双斩等原生招式仍可使用。
 
-**[下载 v1.2.19 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.19/MHGU-Yuzu-ZR-v1.2.19.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
+**[下载 v1.2.20 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.20/MHGU-Yuzu-ZR-v1.2.20.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
+
+v1.2.20 修复武士道大居合按 Y 进入拖刀后，同一帧继续执行旧动作更新、掉回普通移动的问题。
 
 v1.2.19 武士道大居合反击成功后，第一次 Y 接原生拖刀，松开再按 Y 出一文字斩。气刃足够时，按 RT 接原生气刃无双斩。
 
@@ -20,7 +22,7 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 ## 安装
 
-1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.19.zip`，双击 **Install.cmd**。
+1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.20.zip`，双击 **Install.cmd**。
 2. 如果安装器列出重复的太刀、Forge、跳字或轮盘插件，把对应旧目录移到游戏模组目录之外，再运行安装器。
 3. 到 Yuzu 的游戏属性，启用 **MHGU-ZR-Integrated**。启用 **MHGU-Xbox-Prompts** 可显示 Xbox 按键。切换提示后重启游戏。
 4. 在 Yuzu 控制器配置里确认 Xbox **RT 对应 ZR**，**RB 对应 R**，**LT 对应 ZL**，**LB 对应 L**。
@@ -92,7 +94,7 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 ## English quick start
 
-For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.19 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.19), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
+For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.20 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.20), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
 
 The moveset brings Foresight, Special Sheathe, Iai, Helm Breaker, Crimson Slash, Spirit Charge, and Spirit Release to all six hunting styles. **RT** (Switch ZR) handles Spirit attacks, including native aerial draws. With the sword sheathed, hold a direction with RT for moving Spirit Blade I. **RT+A** is Special Sheathe, **RT+B** is Foresight, and **RT+Y** is Spirit Thrust. Hold **LB** for the item wheel. Use Type 2 controls for Hunter Arts with **LT+Y**, **LT+X**, and **LT+A**.
 
