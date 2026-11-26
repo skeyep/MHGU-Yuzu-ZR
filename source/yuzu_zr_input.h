@@ -1,6 +1,17 @@
 #ifndef YUZU_ZR_INPUT_H
 #define YUZU_ZR_INPUT_H
 
+/* Ignore the Y that selected the run, including its native buffered cut.
+ * A new physical press hands the rest of the run back to GU. */
+typedef struct { unsigned waiting,held_y; } YuzuAdeptRun;
+static inline unsigned yuzu_adept_run_input(YuzuAdeptRun *run,unsigned bits)
+{
+    unsigned y=bits&0x1000u;
+    if(run->waiting&&y&&!run->held_y)run->waiting=0;
+    run->held_y=y;
+    return run->waiting?bits&~0x1000u:bits;
+}
+
 /* MT Framework's pad bits after native Switch input mapping. */
 enum { YUZU_PAD_LOCK = 0x4, YUZU_PAD_R = 0x200, YUZU_PAD_ZL = 0x400, YUZU_PAD_ZR = 0x800,
        YUZU_PAD_X = 0x1000, YUZU_PAD_AX = 0x3000, YUZU_PAD_WEAPON = 0xfa00 };
