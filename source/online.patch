@@ -1,0 +1,730 @@
+diff --git a/integration/c/gu_adapter.c b/integration/c/gu_adapter.c
+index bbcd8c5..f5e45fb 100644
+--- a/integration/c/gu_adapter.c
++++ b/integration/c/gu_adapter.c
+@@ -100,7 +100,19 @@ static void ml_pad_read(void)
+          ((raw&0x4000)?ML_B:0)|((raw&0x8000)?ML_Y:0)|((raw&0x800)?ML_ZR:0);
+     pad_valid=1;
+ }
+-void ml_pad_refresh(void){++sample_sequence;ml_pad_read();}
++#if ML_WORLD_COMBAT && ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++static void online_tick(void);
++static void online_note(void *a,unsigned request);
++static unsigned online_sword_peer(void *actor);
++#endif
++void ml_pad_refresh(void)
++{
++    ++sample_sequence;
++    ml_pad_read();
++#if ML_WORLD_COMBAT && ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++    if(installed)online_tick();
++#endif
++}
+ u32 ml_pad_raw_bits(void)
+ {
+     uptr pad=ml_pad_base();
+@@ -205,7 +217,7 @@ static struct {void *owner;unsigned epoch,model;float pose[12];} back_rest[2];
+ static unsigned ported_round_motion(unsigned motion)
+ {
+     return motion==0x500+148||motion==0x500+219;
+-}
++}
+ static unsigned shortened_round(void *a,unsigned motion)
+ {
+     void *resource=(void *)(uptr)word(a,0xf18);
+@@ -223,7 +235,7 @@ static u32 __attribute__((pcs("aapcs-vfp"))) round_frame_crossing(void *a,float
+     if((uptr)__builtin_return_address(0)==main_base+0x119b7f4&&u16(a,MOTION)==0x500+127&&
+        shortened_round(a,0x500+127))frame=W_ROUND_SHORT_SHEATHE;
+     return original_frame_crossing(a,frame);
+-}
++}
+ static void attachment_multiply(const float *a,const float *b,float *out)
+ {
+     for(unsigned i=0;i<3;++i){
+@@ -484,7 +496,7 @@ static u32 preview_equipment_motion(void *object,u32 owner,u32 c,u32 d)
+             *(uint16_t *)((uptr)a+MOTION)=(uint16_t)motion;
+             *clock=frame;
+             return result;
+-        }
++        }
+         unsigned wilds=0;
+         for(unsigned i=0;i<sizeof(wilds_clips)/sizeof(*wilds_clips);++i)
+             if(motion==0x500+wilds_clips[i].slot){wilds=1;break;}
+@@ -666,7 +678,7 @@ static uptr __attribute__((pcs("aapcs-vfp"))) layer_hook(void *a,u32 layer,u32 m
+     if(!layer&&motion==5127&&u16(a,STATE)==16&&u16(a,ACTION)==31&&
+        start==W_ROUND_SHEATHE_FRAME&&shortened_round(a,0x500+127))
+         start=W_ROUND_SHORT_SHEATHE;
+-#endif
++#endif
+     uptr result=original_layer(a,layer,motion,flags,blend,start,speed);
+     if(layer==0&&motion!=0xffffu&&local_supported(a)){
+         if(bind_actor!=a){bind_actor=a;bind_generation=0;}
+diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
+index 55b9986..29294e3 100644
+--- a/integration/c/world_adapter.inc
++++ b/integration/c/world_adapter.inc
+@@ -169,6 +169,7 @@ enum { WORLD_R_WAIT_RELEASE=4,WORLD_COUNTER_RT,WORLD_COUNTER_B }; /* Physical bu
+ static struct {unsigned active,actor,epoch,motion,generation,action,flags,button,owner_action,owner_state;} world_r_gate;
+ #include "world_hits.h"
+ static unsigned world_bound,world_bound_actor,world_bound_action,world_last_sample;
++static unsigned world_bind_serial;
+ static float world_regen,world_helm_regen,world_regen_fraction;
+ static float world_regen_hud_frame;
+ static void (*world_original_spirit_hud)(void *);
+@@ -754,6 +755,9 @@ static u32 world_focus_turn(void *a)
+ }
+ #endif
+ #include "world_audio.inc"
++#if ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++#include "world_online.inc"
++#endif
+ #if ML_WORLD_PRESENTATION
+ #include "world_simple_fx.inc"
+ #else
+@@ -2031,6 +2035,34 @@ static void world_pose_probe(void *a)
+ }
+ #endif
+ 
++/* The quest player registry uses session-slot order (native 276278).
++ * Log transitions, including the locally observed pose of each other hunter,
++ * even after the general per-session debug budget has been consumed. */
++static void world_trace_party(void *local)
++{
++    static struct {u32 actor, state_action, motion, area;} previous[4];
++    static unsigned last_sample;
++    if(last_sample==sample_sequence)return;
++    last_sample=sample_sequence;
++    void *network=(void *)(uptr)word((void *)main_base,0x18843f0);
++    void *players=(void *)(uptr)word((void *)main_base,0x1885b58);
++    for(unsigned slot=0;slot<4;++slot){
++        void *p=network&&byte(network,0x63e)&&players?
++            (void *)(uptr)word(players,0x1c+4*slot):0;
++        if(!p){
++            if(previous[slot].actor)write_event("party_leave",slot,previous[slot].actor,0,0);
++            previous[slot].actor=0;
++            continue;
++        }
++        unsigned pair=(u16(p,STATE)<<16)|u16(p,ACTION), motion=u16(p,MOTION), area=byte(p,AREA);
++        if(previous[slot].actor!=(u32)(uptr)p || previous[slot].state_action!=pair ||
++           previous[slot].motion!=motion || previous[slot].area!=area){
++            previous[slot]=(__typeof__(previous[0])){(u32)(uptr)p,pair,motion,area};
++            write_event(p==local?"party_local":"party_peer",slot,(area<<16)|motion,pair,word(p,FRAME));
++        }
++    }
++}
++
+ static unsigned world_update(void *a,const MLObservation *b)
+ {
+ #if ML_WILDS_MOVES
+@@ -2277,13 +2309,23 @@ static unsigned world_update(void *a,const MLObservation *b)
+          * Keep the source duration, frame0 and unmodified event clock. */
+         original_layer(a,0,5000+world.slot,world_entry_blend>0?0x81:0,
+                        world_entry_blend>2?world_entry_blend-2:0,world_entry_start,world_entry_speed);
++        /* Record the native action owner before checking the layer result so
++         * that abort can return a rejected private action to GU immediately. */
++        world_bound=1;world_bound_action=w_action(world.move);world_bound_actor=(u32)(uptr)a;
++        if(u16(a,MOTION)!=0x500+world.slot){
++            write_event("move_bind_failed",world.source,world.slot,u16(a,MOTION),u16(a,ACTION));
++            WDecision exit=w_leave(&world);
++            exit.kind=W_ABORT;
++            world_commit(a,exit);
++            return 1;
++        }
++        ++world_bind_serial;
+         log_event("world_blend",(u32)(uptr)a,world.source,(u32)world_entry_blend,(u32)real(a,0x4f4));
+         /* Stock common action1:2 uses vtable46c / 2a2560(a,0) to sheath.
+          * Keep its packed flags intact while playing source cIaigiriWpOff312. */
+         if(world.move==W_SHEATHE_END)
+             ((void (*)(void *,unsigned))(main_base+0x2a2560))(a,0);
+         world_physics_begin(a,world.move);
+-        world_bound=1;world_bound_action=w_action(world.move);world_bound_actor=(u32)(uptr)a;
+ #if ML_WORLD_AUDIO_PROBE || ML_WORLD_PRESENTATION
+         world_audio_begin(a);
+ #endif
+diff --git a/integration/c/world_audio.inc b/integration/c/world_audio.inc
+index 6ff93a1..bc2eec1 100644
+--- a/integration/c/world_audio.inc
++++ b/integration/c/world_audio.inc
+@@ -30,6 +30,9 @@ static u32 (*world_audio_original_position)(void *);
+ static unsigned world_audio_live_actor,world_audio_live_epoch;
+ typedef struct {unsigned serial,actor,epoch;} WAudioSpatialVoice;
+ static WAudioSpatialVoice world_audio_spatial_voices[128];
++#if ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++static void online_audio_voice(void *voice);
++#endif
+ static unsigned world_audio_weapon_point(void *a,unsigned request,float *point)
+ {
+     if(request<6||request>=WORLD_AUDIO_CONDITIONAL_FIRST)return 0;
+@@ -47,6 +50,10 @@ static unsigned world_audio_weapon_point(void *a,unsigned request,float *point)
+ }
+ static u32 world_audio_position(void *voice)
+ {
++#if ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++    if(world_audio_ready&&word(voice,12)==(uptr)world_audio_request&&word(voice,172)==1&&
++       word(voice,20)!=world_audio_live_actor)online_audio_voice(voice);
++#endif
+     /* This native callback runs immediately before distance/panning is
+      * evaluated. Only our private requests are changed; the normal mixer,
+      * attenuation and voice lifecycle still belong to GU. */
+@@ -161,6 +168,9 @@ static void world_audio_play(void *a,unsigned request,const float *point)
+     void *sm=*(void **)(main_base+0x1896f5c);if(!sm||!world_audio_ready)return;
+ #if ML_WILDS_MOVES && WORLD_AUDIO_WEAPON
+     request=wilds_resolve_wind(a,request);
++#endif
++#if ML_WORLD_COMBAT && ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++    online_note(a,request);
+ #endif
+     unsigned group=byte(a,0x111a)?13:12;
+     if(point)
+diff --git a/integration/c/world_command_driver.inc b/integration/c/world_command_driver.inc
+index ef0f497..73703ef 100644
+--- a/integration/c/world_command_driver.inc
++++ b/integration/c/world_command_driver.inc
+@@ -313,6 +313,10 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+         if(elapsed>=16&&elapsed<50)counter_stage=elapsed>=20?3:1;
+     }
+     unsigned counter_keys=ML_R|ML_A;
++    unsigned round=native_round||(s->move==W_GROUND&&s->source==109)||s->source==917;
++    if(!round||!o->grounded||o->hunter_art_input||(b->held&~(ML_R|ML_X))||
++       s->counter_action!=b->native_action||s->counter_motion!=b->motion||
++       s->counter_generation!=b->bind_generation)s->round_thrust_pending=0;
+     if(!counter_stage||!o->grounded||o->hunter_art_input||(b->held&~counter_keys)||
+        s->counter_action!=b->native_action||s->counter_motion!=b->motion||
+        s->counter_generation!=b->bind_generation)s->counter_pending=0;
+@@ -334,6 +338,24 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+     }
+     unsigned owner=sakura_cut?0x703:finisher?(s->move?0x10000u|s->source:b->motion):0;
+     unsigned previous_keys=s->finisher_sheathe_keys,previous_owner=s->finisher_sheathe_owner;
++    /* The round can seat the sword before returning to idle. Consume the
++     * chord on its own recovery clock so neither a solo R nor GU's sheathe
++     * transition can take the first tick of the thrust. */
++    unsigned round_cancel=s->source==917?55:s->red_foresight_chain?50:62;
++    if(round&&o->grounded&&!o->hunter_art_input){
++        unsigned chord=ML_R|ML_X;
++        if(b->held==chord&&previous_keys!=chord&&b->animation_frame+W_FINISHER_SHEATHE_LEAD>=round_cancel){
++            s->round_thrust_pending=1;
++        }
++        if(s->round_thrust_pending){
++            s->finisher_sheathe_keys=b->held;
++            if(b->animation_frame>=round_cancel){
++                s->round_thrust_pending=0;
++                return enter(s,o,W_THRUST,chord);
++            }
++            return (WDecision){0};
++        }
++    }
+     unsigned fresh_sheathe=b->held==(ML_R|ML_B)&&previous_keys!=(ML_R|ML_B);
+     s->finisher_sheathe_keys=b->held;
+     if((!finisher&&!sakura_cut)||!o->grounded||o->hunter_art_input||s->finisher_sheathe_owner!=owner||
+diff --git a/integration/c/world_core.c b/integration/c/world_core.c
+index c9a6ae3..61208a2 100644
+--- a/integration/c/world_core.c
++++ b/integration/c/world_core.c
+@@ -463,6 +463,7 @@ WDecision w_leave(WState *s)
+ #endif
+     if(s->helm_cost_pending&&s->rank)d.rank_delta-=1;
+     s->helm_cost_pending=0;s->red_foresight_chain=0;s->wilds_charge_link=0;
++    s->round_thrust_pending=0;
+     s->spirit_crimson_pending=s->spirit_crimson_repeat=0;
+     s->counter_pending=0;
+     s->move=s->bound=s->queued=0;s->source=s->slot=0;s->ground_node=s->main_source=0;return d;
+@@ -797,6 +798,7 @@ void w_clear_player_input(WState *s)
+ {
+     s->keys=(WKeys){0};s->controls=(WControls){0};s->gu_chord_wait=0;
+     s->fade_step_pending=0;
++    s->round_thrust_pending=0;
+     s->counter_pending=0;
+     s->queued=s->consumed=0;s->air_sheathe_buffer=0;
+     s->finisher_sheathe_pending=0;
+@@ -839,6 +841,7 @@ WDecision w_step(WState *s,const WObservation *o)
+ #endif
+     if(!o->grounded||!o->alive||!o->resources_ready||(!o->drawn&&!sheathing))s->counter_pending=0;
+     if(!o->alive||(!o->drawn&&!sheathing)||!o->resources_ready){
++        s->round_thrust_pending=0;
+         s->finisher_sheathe_keys=b->held;
+         s->finisher_sheathe_pending=0;
+         if(!s->move){
+@@ -859,9 +862,9 @@ WDecision w_step(WState *s,const WObservation *o)
+     if(s->move){
+         if(b->native_action!=w_action(s->move)){d=combine(d,w_leave(s));d.kind=W_ABORT;return d;}
+         if(b->motion!=0x500+s->slot){
+-            /* An outgoing clip is expected until the first bind. Once bound,
+-             * a replacement clip ends this Helm stage, even at the same action ID. */
+-            if(s->bound&&s->move>=W_RISE&&s->move<=W_LAND){
++            /* Once GU replaces an owned layer, its clock no longer drives the
++             * move's recovery window. This also applies to the thrust startup. */
++            if(s->bound){
+                 d=combine(d,w_leave(s));d.kind=W_ABORT;
+             }
+             return d;
+diff --git a/integration/c/world_core.h b/integration/c/world_core.h
+index fb81048..10f7b55 100644
+--- a/integration/c/world_core.h
++++ b/integration/c/world_core.h
+@@ -78,6 +78,7 @@ typedef struct {
+     unsigned air_sheathe_sample,air_sheathe_held;
+     float air_sheathe_buffer;
+     unsigned finisher_sheathe_owner,finisher_sheathe_keys,finisher_sheathe_pending;
++    unsigned round_thrust_pending;
+     unsigned counter_pending,counter_action,counter_generation,counter_motion;
+     unsigned bound,consumed,queued,queued_mask,queued_source,foresight_gauge;
+     unsigned queued_word,queued_shift,queued_heading;
+diff --git a/integration/c/world_detector.inc b/integration/c/world_detector.inc
+index 973851e..9cede67 100644
+--- a/integration/c/world_detector.inc
++++ b/integration/c/world_detector.inc
+@@ -85,7 +85,7 @@ static unsigned world_counter_type(unsigned type)
+ {
+     return !(type>=25&&type<=29)&&type!=58&&type!=67&&type!=68&&type!=70;
+ }
+-static unsigned world_attack_intersection(void *manager,void *attack,const float *capsule)
++static unsigned world_find_intersection(void *manager,void *attack,const float *capsule,float *matched)
+ {
+     void *resource=(void *)(uptr)word(attack,0x84);
+     void *group=resource?((void *(*)(void *,unsigned))(*(uptr **)resource)[0x44/4])
+@@ -103,11 +103,20 @@ static unsigned world_attack_intersection(void *manager,void *attack,const float
+         if(type==1)shape[3]=real(record,4);
+         else{for(unsigned k=0;k<3;++k)shape[4+k]=real(record,20+4*k);shape[8]=real(record,4);}
+         unsigned fn=type==1?0x168198:type==2?0x167b5c:0x1683dc;
+-        if(((unsigned (*)(const void *,const void *,void *))(main_base+fn))(shape,capsule,contact))
++        if(((unsigned (*)(const void *,const void *,void *))(main_base+fn))(shape,capsule,contact)){
++            if(matched)for(unsigned k=0;k<9;++k)matched[k]=shape[k];
+             return type;
++        }
+     }
+     return 0;
+ }
++static unsigned world_attack_intersection(void *manager,void *attack,const float *capsule)
++{
++    return world_find_intersection(manager,attack,capsule,0);
++}
++#if ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++static void online_blade_contacts(void *manager);
++#endif
+ #if ML_WILDS_MOVES
+ static void world_big_iai_capsule(void *a,float *capsule)
+ {
+@@ -157,6 +166,9 @@ static void world_detect_attack(void *manager,void *attack,void *a)
+ static u32 world_attack_shapes(void *manager)
+ {
+     u32 result=world_original_attack_shapes(manager);
++#if ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++    online_blade_contacts(manager);
++#endif
+     void *a=(void *)(uptr)world.actor;
+     if(!a||!world.move||!world_bound||world_counter_seen)return result;
+     /* Native16b15c performs damage-packet and previous-attack-ID filtering
+@@ -176,6 +188,25 @@ static u32 world_player_query(void *manager,void *attack,void *a)
+     unsigned watched=a==(void *)(uptr)world.actor&&world_detected_attack==(u32)(uptr)attack;
+     unsigned before=byte(a,0x31e0);
+     u32 result=world_original_player_query(manager,attack,a);
++#if ML_WILDS_MOVES && ML_WORLD_PRESENTATION
++    /* GU appends the accepted collision ID to the defender's 20-entry hit
++     * history at 170758. Preserve that registration and a stunned hunter's
++     * native wake reaction. Scope the filter to the other hunter's blade. */
++    if(!before&&byte(a,0x31e0)){
++        unsigned next=byte(a,0x31e8);
++        void *owner=(void *)(uptr)word(attack,0xc);
++        if(next<20&&owner&&owner!=a&&(uptr)attack==(uptr)owner+0x3020&&
++           u16(a,0x31ea+2*((next+19)%20))==u16(attack,0x34)){
++            unsigned ally=online_sword_peer(owner);
++            if(ally&&a==world_local_hunter()){
++                unsigned wake=u16(a,STATE)==64&&u16(a,ACTION)==26;
++                write_event(wake?"ally_wake_contact":"ally_contact",ally-1,u16(attack,0x34),
++                            u16(a,STATE)<<16|u16(a,ACTION),byte(a,0x3216));
++                if(!wake)*(unsigned char *)((uptr)a+0x31e0)=0;
++            }
++        }
++    }
++#endif
+ #if ML_WILDS_MOVES
+     /* Remember a real monster-body collision until GU processes its damage
+      * packet. The collision pass can run before the hunter update. */
+diff --git a/integration/c/world_online.inc b/integration/c/world_online.inc
+new file mode 100644
+index 0000000..2d9030e
+--- /dev/null
++++ b/integration/c/world_online.inc
+@@ -0,0 +1,382 @@
++/* Presentation on GU's local-wireless network. The native game still owns
++ * actors, hit registration, position and action transitions on both machines. */
++typedef struct {
++    uint8_t length,family;
++    uint16_t port;
++    u32 address,padding[2];
++} OnlineAddress;
++typedef struct {
++    u32 address;
++    uint8_t mac[6],node,connected,remaining[52];
++} OnlineNode;
++typedef struct {
++    u32 intent[4],session[4];
++    uint8_t common[0x30],security[0x18];
++    OnlineNode nodes[8];
++    uint8_t tail[0x218];
++} OnlineLdn;
++_Static_assert(sizeof(OnlineLdn)==0x480 && __builtin_offsetof(OnlineLdn,nodes)==0x68,"LDN NetworkInfo");
++typedef struct {
++    u32 id;
++    uint16_t request;
++    uint8_t age,area;
++} OnlineCue;
++typedef struct {
++    u32 id;
++    uint16_t blade;
++    uint8_t target,type;
++    float radius,from[3],to[3];
++} OnlineContact;
++typedef struct {
++    u32 magic,session[4],sequence,entry;
++    uint16_t source;
++    uint8_t move,slot,area,version;
++    uint16_t reserved;
++    float frame,rate;
++    OnlineCue cues[8];
++    OnlineContact contact;
++} OnlinePose;
++typedef struct {
++    u32 address,sequence,entry,cue,actor,last_rx;
++    unsigned area,slot,motion,prior_motion,long_sword;
++    float frame,rate,length;
++    u32 last_contact,contact_time;
++    OnlineContact incoming;
++} OnlinePeer;
++static struct {
++    int fd;
++    u32 session[4],self,sequence,entry,last_send,source,last_cue,bind_serial,area,actor;
++    OnlinePeer peers[8];
++    OnlineCue cues[8];
++    u32 cue_time[8];
++    u32 contact_sequence,contact_time[4],contact_actor[4],contact_bind[4],last_active;
++    OnlineContact contacts[4];
++} online={.fd=-1};
++enum { ONLINE_MAGIC=0x31534c47,ONLINE_PORT=45871 };
++#define ONLINE_SDK(type,got) ((type)(uptr)word((void *)main_base,got))
++typedef int (*OnlineSocket)(int,int,int);
++typedef int (*OnlineBind)(int,const OnlineAddress *,unsigned);
++typedef int (*OnlineSend)(int,const void *,unsigned,int,const OnlineAddress *,unsigned);
++typedef int (*OnlineRecv)(int,void *,unsigned,int,OnlineAddress *,unsigned *);
++static int online_session_equal(const u32 *a,const u32 *b)
++{
++    return a[0]==b[0]&&a[1]==b[1]&&a[2]==b[2]&&a[3]==b[3];
++}
++static void online_release_pose(OnlinePeer *peer,void *actor);
++static void online_forget_peer(OnlinePeer *peer)
++{
++    void *players=(void *)(uptr)word((void *)main_base,0x1885b58);
++    if(players&&peer->motion&&peer->slot<4){
++        void *actor=(void *)(uptr)word(players,0x1c+4*peer->slot);
++        if(actor&&actor!=world_local_hunter())online_release_pose(peer,actor);
++    }
++    *peer=(OnlinePeer){0};
++}
++static void online_close(void)
++{
++    if(online.fd>=0){
++        for(unsigned i=0;i<8;++i)if(online.peers[i].address)online_forget_peer(online.peers+i);
++        ONLINE_SDK(int (*)(int),0x18382ac)(online.fd);
++        write_event("online_close",online.sequence,online.last_cue,0,0);
++    }
++    online=(__typeof__(online)){.fd=-1};
++}
++static int online_members(void)
++{
++    OnlineLdn info={0};
++    u32 local=0,mask=0;
++    if(ONLINE_SDK(u32 (*)(OnlineLdn *),0x18381fc)(&info)||
++       ONLINE_SDK(u32 (*)(u32 *,u32 *),0x18388d0)(&local,&mask)||!local)return 0;
++    if(online.fd>=0&&!online_session_equal(online.session,info.session))online_close();
++    if(online.fd<0){
++        online.fd=ONLINE_SDK(OnlineSocket,0x183829c)(2,2,0);
++        OnlineAddress listen={16,2,__builtin_bswap16(ONLINE_PORT),0,{0,0}};
++        int bound=online.fd<0?-1:ONLINE_SDK(OnlineBind,0x18382c0)(online.fd,&listen,sizeof(listen));
++        if(bound<0){write_event("online_bind_error",online.fd,bound,local,0);online_close();return 0;}
++        for(unsigned i=0;i<4;++i)online.session[i]=info.session[i];
++        online.self=__builtin_bswap32(local);
++        write_event("online_open",online.self,info.nodes[0].address,online.fd,0);
++    }
++    for(unsigned i=0;i<8;++i){
++        u32 address=info.nodes[i].connected?__builtin_bswap32(info.nodes[i].address):0;
++        if(address==online.self)address=0;
++        if(online.peers[i].address!=address){
++            online_forget_peer(online.peers+i);
++            online.peers[i].address=address;
++            write_event("online_member",i,address,info.nodes[i].node,0);
++        }
++    }
++    return 1;
++}
++static void online_note(void *a,unsigned request)
++{
++    if(online.fd<0||!local_long_sword(a)||request>RC114_ROUND_RANK)return;
++    u32 id=++online.last_cue;
++    online.cues[id%8]=(OnlineCue){id,request,0,byte(a,AREA)};
++    online.cue_time[id%8]=sample_sequence;
++    write_event("online_cue_tx",world.source,request,id,byte(a,AREA));
++}
++static void online_release_pose(OnlinePeer *peer,void *actor)
++{
++    if(peer->motion&&actor&&peer->actor==(uptr)actor&&peer->area==byte(actor,AREA)&&
++       u16(actor,MOTION)==peer->motion&&u16(actor,STATE)==1&&u16(actor,ACTION)<=5){
++        unsigned native=peer->prior_motion;
++        original_layer(actor,0,1000*(native>>8)+(native&255),0x81,3,0,1);
++    }
++    peer->motion=0;peer->entry=0;
++}
++static void online_receive(void *local,void *players,OnlinePeer *peer,const OnlinePose *pose)
++{
++    if(pose->version!=2||pose->magic!=ONLINE_MAGIC||!online_session_equal(online.session,pose->session)||
++       (int32_t)(pose->sequence-peer->sequence)<=0)return;
++    if(!peer->sequence)write_event("online_rx",peer->address,pose->slot,pose->sequence,pose->version);
++    peer->sequence=pose->sequence;
++    peer->last_rx=sample_sequence;
++    if(!local||!players||pose->slot>=4||pose->area!=byte(local,AREA)){
++        if(players&&peer->slot<4&&peer->motion){
++            void *old=(void *)(uptr)word(players,0x1c+4*peer->slot);
++            if(old!=local)online_release_pose(peer,old);
++        }
++        peer->actor=peer->long_sword=0;
++        return;
++    }
++    void *actor=(void *)(uptr)word(players,0x1c+4*pose->slot);
++    if(!actor||actor==local||byte(actor,AREA)!=pose->area||(int16_t)u16(actor,HP)<=0){
++        peer->actor=peer->motion=peer->long_sword=peer->entry=0;
++        return;
++    }
++    if(peer->actor!=(uptr)actor||peer->area!=pose->area){
++        peer->actor=(uptr)actor;peer->area=pose->area;peer->entry=peer->motion=0;
++    }
++    peer->slot=pose->slot;peer->long_sword=pose->reserved==1;
++    const OnlineContact *contact=&pose->contact;
++    if(peer->long_sword&&contact->target<4&&word(players,0x1c+4*contact->target)==(uptr)local&&
++       (int32_t)(contact->id-peer->last_contact)>0&&contact->type>=1&&contact->type<=3&&
++       contact->radius>0&&contact->radius<2048){
++        peer->incoming=*contact;peer->last_contact=contact->id;peer->contact_time=sample_sequence;
++    }
++    unsigned state=u16(actor,STATE),action=u16(actor,ACTION);
++    /* GU collapses a peer's private action to drawn idle (group 1/action 0).
++     * Keep native hit, item, cart and map transitions in control. */
++    int passive=state==1&&action<=5;
++    if(!pose->source)online_release_pose(peer,actor);
++    if(pose->source&&pose->move>=W_FORESIGHT&&pose->move<=W_FOCUS&&
++       (passive||(state==16&&action==w_action(pose->move)))){
++        const WClip *clip=w_clip(pose->source);
++        void *resource=(void *)(uptr)word(actor,0xf04+5*4);
++        void *bank=resource?(void *)(uptr)word(resource,0x64):0;
++        if(clip&&clip->slot&&bank&&word(bank,0)==0x00544d4c&&u16(bank,6)>clip->slot&&
++           word(bank,8+4*clip->slot)&&pose->frame>=0&&pose->frame<clip->length&&pose->rate>=0&&pose->rate<=8){
++            unsigned motion=u16(actor,MOTION);
++            peer->frame=pose->frame;peer->rate=pose->rate;peer->length=clip->length;
++            if(peer->entry!=pose->entry||motion!=0x500+clip->slot){
++                if(motion!=peer->motion&&motion!=0xffff)peer->prior_motion=motion;
++                original_layer(actor,0,5000+clip->slot,0x81,2,pose->frame,pose->rate);
++                if(u16(actor,MOTION)==0x500+clip->slot){
++                    if(peer->entry!=pose->entry){
++                        write_event("remote_bind",pose->slot,pose->source,pose->entry,clip->slot);
++                        if(pose->move>=W_RISE&&pose->move<=W_LAND)
++                            write_event("remote_air_pose",pose->entry,word(actor,0x40),word(actor,0x44),word(actor,0x48));
++                    }
++                    peer->entry=pose->entry;peer->motion=0x500+clip->slot;
++                }
++            }else{
++                float drift=real(actor,FRAME)-pose->frame;
++                if(drift>8||drift< -8)
++                    original_layer(actor,0,5000+clip->slot,0x81,2,pose->frame,pose->rate);
++                else set_real(actor,0x50c,pose->rate);
++            }
++        }
++    }
++    for(unsigned i=0;i<8;++i){
++        const OnlineCue *cue=pose->cues+i;
++        if(!cue->id||(int32_t)(cue->id-peer->cue)<=0||cue->age>24||
++           cue->area!=pose->area||cue->request>RC114_ROUND_RANK)continue;
++        world_audio_load(local);
++        if(!world_audio_ready)break;
++        void *sm=*(void **)(main_base+0x1896f5c);
++        if(!sm)break;
++        ((void (*)(void *,u32,void *,u32,void *,const float *,void *))(main_base+0x4ee980))
++            (sm,byte(actor,0x111a)?13:12,world_audio_request,cue->request,actor,(const float *)((uptr)actor+0x40),actor);
++        peer->cue=cue->id;
++        write_event("remote_cue",pose->slot,cue->request,cue->id,pose->sequence);
++    }
++}
++static void world_trace_party(void *local);
++static void online_tick(void)
++{
++    static u32 next_check;
++    void *network=(void *)(uptr)word((void *)main_base,0x18843f0);
++    if(!network||!byte(network,0x63e)){if(online.fd>=0)online_close();next_check=0;return;}
++    if(!next_check||(int32_t)(sample_sequence-next_check)>=0){
++        if(!online_members()){if(online.fd>=0)online_close();next_check=sample_sequence+120;return;}
++        next_check=sample_sequence+60;
++    }
++    if(online.fd<0)return;
++    void *players=(void *)(uptr)word((void *)main_base,0x1885b58);
++    void *local=players?((void *(*)(void *))(main_base+0x276278))(players):0;
++    world_trace_party(local);
++    for(unsigned i=0;players&&i<8;++i){
++        OnlinePeer *peer=online.peers+i;
++        if(peer->motion&&sample_sequence-peer->last_rx>30&&peer->slot<4)
++            online_release_pose(peer,(void *)(uptr)word(players,0x1c+4*peer->slot));
++    }
++    OnlineAddress from;
++    for(unsigned i=0;i<8;++i){
++        OnlinePose packet;
++        unsigned size=sizeof(from);
++        int count=ONLINE_SDK(OnlineRecv,0x18382cc)(online.fd,&packet,sizeof(packet),0x80,&from,&size);
++        if(count<0)break;
++        if(count!=sizeof(packet)||size!=sizeof(from)||from.family!=2||
++           from.port!=__builtin_bswap16(ONLINE_PORT))continue;
++        for(unsigned j=0;j<8;++j)if(online.peers[j].address&&online.peers[j].address==from.address){
++            online_receive(local,players,online.peers+j,&packet);break;
++        }
++    }
++    /* GU can reset a proxy to drawn idle between two received updates.
++     * Keep its last confirmed clip moving during that short interval. */
++    for(unsigned i=0;players&&local&&i<8;++i){
++        OnlinePeer *p=online.peers+i;
++        unsigned age=sample_sequence-p->last_rx;
++        if(!p->motion||!age||age>4||p->slot>=4||p->area!=byte(local,AREA))continue;
++        void *actor=(void *)(uptr)word(players,0x1c+4*p->slot);
++        if(!actor||actor==local||p->actor!=(uptr)actor||p->area!=byte(actor,AREA)||
++           u16(actor,STATE)!=1||u16(actor,ACTION)>5||u16(actor,MOTION)!=0x501)continue;
++        float frame=p->frame+age*p->rate;
++        if(frame>=p->length)frame=p->length-1;
++        original_layer(actor,0,5000+(p->motion&255),0x81,2,frame,p->rate);
++    }
++    unsigned slot=4;
++    if(local)for(unsigned i=0;i<4;++i)if(word(players,0x1c+4*i)==(uptr)local){slot=i;break;}
++    unsigned area=local?byte(local,AREA):0;
++    unsigned active=local&&world.actor==(uptr)local&&world_bound&&world.move&&
++        u16(local,ACTION)==w_action(world.move)&&u16(local,MOTION)==0x500+world.slot;
++    unsigned source=active?world.source:0;
++    if(active)online.last_active=sample_sequence;
++    if(!active&&online.source&&local&&online.actor==(uptr)local&&online.area==area&&
++       world.actor==(uptr)local&&world.move&&u16(local,STATE)==16&&
++       sample_sequence-online.last_active<=3)return;
++    int changed=online.source!=source||online.actor!=(uptr)local||online.area!=area||
++                (active&&online.bind_serial!=world_bind_serial);
++    if(active)online.bind_serial=world_bind_serial;
++    if(changed){++online.entry;online.source=source;online.area=area;online.actor=(uptr)local;}
++    if(changed&&active&&world.move>=W_RISE&&world.move<=W_LAND)
++        write_event("online_air_pose",online.entry,word(local,0x40),word(local,0x44),word(local,0x48));
++    unsigned recent=online.last_cue&&sample_sequence-online.cue_time[online.last_cue%8]<24;
++    for(unsigned i=0;i<4;++i)if(online.contacts[i].id&&sample_sequence-online.contact_time[i]<18)recent=1;
++    if(!changed&&sample_sequence-online.last_send<(source||recent?4u:60u))return;
++    OnlinePose packet={.magic=ONLINE_MAGIC,.version=2,.sequence=++online.sequence,.entry=online.entry,
++                       .slot=slot,.area=area,.source=source,.move=active?world.move:0};
++    packet.reserved=local_long_sword(local);
++    if(active){packet.frame=real(local,FRAME);packet.rate=real(local,0x50c);}
++    for(unsigned i=0;i<4;++i)packet.session[i]=online.session[i];
++    for(unsigned i=0;i<8;++i){
++        unsigned index=(online.last_cue+1+i)%8;
++        if(online.cues[index].id&&sample_sequence-online.cue_time[index]<25){
++            packet.cues[i]=online.cues[index];packet.cues[i].age=sample_sequence-online.cue_time[index];
++        }
++    }
++    for(unsigned i=0;i<8;++i)if(online.peers[i].address){
++        unsigned target=online.peers[i].slot;
++        packet.contact=(OnlineContact){0};
++        if(target<4&&online.contact_actor[target]==online.peers[i].actor&&
++           sample_sequence-online.contact_time[target]<18)packet.contact=online.contacts[target];
++        OnlineAddress to={16,2,__builtin_bswap16(ONLINE_PORT),online.peers[i].address,{0,0}};
++        int sent=ONLINE_SDK(OnlineSend,0x18382d4)(online.fd,&packet,sizeof(packet),0,&to,sizeof(to));
++        if(changed||packet.sequence==1)write_event("online_tx",slot,source,packet.sequence,sent);
++    }
++    online.last_send=sample_sequence;
++}
++#undef ONLINE_SDK
++static unsigned online_sword_peer(void *actor)
++{
++    if(online.fd<0)return 0;
++    for(unsigned i=0;i<8;++i){
++        const OnlinePeer *peer=online.peers+i;
++        if(peer->address&&peer->long_sword&&peer->actor==(uptr)actor&&peer->slot<4&&
++           sample_sequence-peer->last_rx<=120)return peer->slot+1;
++    }
++    return 0;
++}
++#if WORLD_AUDIO_WEAPON
++static void online_audio_voice(void *voice)
++{
++    static struct {u32 serial,actor,request;} voices[128];
++    if(online.fd<0)return;
++    void *manager=*(void **)(main_base+0x2126d8c);
++    uptr start=(uptr)manager+64,at=(uptr)voice;
++    if(!manager||at<start||(at-start)%2784||(at-start)/2784>=128)return;
++    void *actor=(void *)(uptr)word(voice,20);
++    unsigned slot=online_sword_peer(actor);
++    if(!slot)return;
++    unsigned idx=(at-start)/2784,request=word(voice,16),serial=word(voice,52);
++    if(voices[idx].serial==serial&&voices[idx].actor==(uptr)actor&&voices[idx].request==request)return;
++    voices[idx]=(__typeof__(voices[0])){serial,(uptr)actor,request};
++    write_event("remote_voice",slot-1,request,serial,idx);
++}
++#endif
++
++/* GU 16bb38 reads the hunter's registered capsule from collision slot 3260. */
++static unsigned online_body_capsule(void *manager,void *actor,float *body)
++{
++    unsigned index=word(actor,0x3260);
++    if(index>=256)return 0;
++    const void *record=(const void *)((uptr)manager+0x1c+index*32);
++    if(byte(record,0)!=2||!(real(record,4)>0))return 0;
++    for(unsigned k=0;k<3;++k){body[k]=real(record,8+4*k);body[k+4]=real(record,20+4*k);}
++    body[8]=real(record,4);
++    return 1;
++}
++static void online_blade_contacts(void *manager)
++{
++    if(online.fd<0)return;
++    void *local=world_local_hunter(),*players=(void *)(uptr)word((void *)main_base,0x1885b58);
++    if(!local||!players||(int16_t)u16(local,HP)<=0)return;
++    void *blade=(void *)((uptr)local+0x3020);
++    unsigned armed=world_attack_owned&&world_attack_actor==(uptr)local&&world_bound&&
++        world_attack_id==u16(blade,0x34)&&world.epoch==byte(local,AREA)&&
++        u16(local,MOTION)==0x500+world.slot&&byte(blade,5)&&word(blade,0xc)==(uptr)local;
++    for(unsigned i=0;i<8;++i){
++        OnlinePeer *p=online.peers+i;
++        if(!p->address||!p->actor||p->slot>=4||p->area!=byte(local,AREA)||
++           p->actor!=word(players,0x1c+4*p->slot)||sample_sequence-p->last_rx>120)continue;
++        void *other=(void *)(uptr)p->actor;
++        if(other==local||byte(other,AREA)!=p->area||(int16_t)u16(other,HP)<=0)continue;
++        OnlineContact *incoming=&p->incoming;
++        if(incoming->id){
++            float body[12]={0},shape[12]={0},point[4]={0};
++            unsigned type=incoming->type;
++            for(unsigned k=0;k<3;++k){shape[k]=incoming->from[k];shape[k+4]=incoming->to[k];}
++            unsigned valid=1;
++            for(unsigned k=0;k<3;++k)if(!(shape[k]>-1e7f&&shape[k]<1e7f&&
++                                           shape[k+4]>-1e7f&&shape[k+4]<1e7f))valid=0;
++            shape[type==1?3:8]=incoming->radius;
++            unsigned fn=type==1?0x168198:type==2?0x167b5c:0x1683dc;
++            if(valid&&sample_sequence-p->contact_time<=12&&online_body_capsule(manager,local,body)&&
++               ((unsigned (*)(const void *,const void *,void *))(main_base+fn))(shape,body,point)){
++                unsigned state=u16(local,STATE),action=u16(local,ACTION);
++                write_event("ally_blade_contact",p->slot,incoming->id,state<<16|action,incoming->blade);
++                if(state==64&&action==26){
++                    ((NativeCall)(main_base+0x2831e0))(local,1,0,0);
++                    write_event("ally_blade_wake",p->slot,incoming->id,u16(local,STATE),u16(local,ACTION));
++                }
++            }
++            incoming->id=0;
++        }
++        if(!armed)continue;
++        unsigned slot=p->slot;
++        OnlineContact *out=online.contacts+slot;
++        if(out->id&&out->blade==world_attack_id&&online.contact_bind[slot]==world_bind_serial&&
++           online.contact_actor[slot]==p->actor)continue;
++        float body[12]={0},shape[9]={0};
++        if(!online_body_capsule(manager,other,body))continue;
++        unsigned type=world_find_intersection(manager,blade,body,shape);
++        if(!type)continue;
++        *out=(OnlineContact){.id=++online.contact_sequence,.blade=world_attack_id,.target=slot,
++                            .type=type,.radius=shape[type==1?3:8]};
++        for(unsigned k=0;k<3;++k){out->from[k]=shape[k];out->to[k]=shape[k+4];}
++        online.contact_time[slot]=sample_sequence;online.contact_bind[slot]=world_bind_serial;
++        online.contact_actor[slot]=p->actor;
++        write_event("ally_blade_tx",slot,out->id,world.source,world_attack_id);
++    }
++}

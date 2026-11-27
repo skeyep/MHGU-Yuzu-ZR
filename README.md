@@ -2,7 +2,9 @@
 
 把《世界／冰原》的见切、居合、登龙和《荒野》的赤刃、气刃蓄力、练气解放带进《怪物猎人 GU》。六种狩猎风格都能用这套太刀，勇气刚气刃、武士道无双斩等原生招式仍可使用。
 
-**[下载 v1.2.25 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.25/MHGU-Yuzu-ZR-v1.2.25.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
+**[下载 v1.2.26 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.26/MHGU-Yuzu-ZR-v1.2.26.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
+
+v1.2.26 同一集会所的玩家都安装 1.2.26 后，可以看到对方的太刀动作，听到气刃兜割命中的音效。太刀击中眩晕队友可将其打醒，击中正常队友时可继续蓄力或出招。气刃大回旋收招时按 RT＋Y 可接气刃突刺，开刃命中后接登龙。
 
 v1.2.25 气刃突刺在红刃命中后，登龙升空、下劈到落地结算期间保留剩余红刃时间。大回旋、气刃旋转斩和武士道气刃无双斩只接红刃见切，各档仍可接特殊纳刀。
 
@@ -30,7 +32,7 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 ## 安装
 
-1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.25.zip`，双击 **Install.cmd**。
+1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.26.zip`，双击 **Install.cmd**。
 2. 如果安装器列出重复的太刀、Forge、跳字或轮盘插件，把对应旧目录移到游戏模组目录之外，再运行安装器。
 3. 到 Yuzu 的游戏属性，启用 **MHGU-ZR-Integrated**。启用 **MHGU-Xbox-Prompts** 可显示 Xbox 按键。切换提示后重启游戏。
 4. 在 Yuzu 控制器配置里确认 Xbox **RT 对应 ZR**，**RB 对应 R**，**LT 对应 ZL**，**LB 对应 L**。
@@ -102,7 +104,9 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 ## English quick start
 
-For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.25 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.25), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
+With 1.2.26 installed on all participating clients, each hunter can see other players perform Long Sword moves and hear the Spirit Helm Breaker impact. A blade hit wakes a stunned teammate and lets an active teammate keep attacking or charging. Press RT + Y during Spirit Roundslash recovery to link into Spirit Thrust. A hit with an active Spirit level starts Helm Breaker.
+
+For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.26 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.26), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
 
 The moveset brings Foresight, Special Sheathe, Iai, Helm Breaker, Crimson Slash, Spirit Charge, and Spirit Release to all six hunting styles. **RT** (Switch ZR) handles Spirit attacks, including native aerial draws. With the sword sheathed, hold a direction with RT for moving Spirit Blade I. **RT+A** is Special Sheathe, **RT+B** is Foresight, and **RT+Y** is Spirit Thrust. Hold **LB** for the item wheel. Use Type 2 controls for Hunter Arts with **LT+Y**, **LT+X**, and **LT+A**.
 
