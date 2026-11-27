@@ -1,0 +1,217 @@
+diff --git a/integration/c/gu_adapter.c b/integration/c/gu_adapter.c
+index 3fe6ae7c..9c0fb3d8 100644
+--- a/integration/c/gu_adapter.c
++++ b/integration/c/gu_adapter.c
+@@ -616,6 +616,12 @@ static u32 request_hook(void *a,u32 state,u32 action,u32 flags)
+      * another simulation sample or advancing any buffered-key timer. */
+     ml_pad_read();
+ #if ML_WORLD_COMBAT
++    if(world_native_restraint(a)||world_status_request(state,action)){
++        world_yield_to_status(a,state,action);
++        if(state==16)return 0;
++        return original_request(a,state,action,flags);
++    }
++    world_status_resumed(a);
+     if(world_request(a,state,action,flags))return 0;
+ #if ML_WORLD_INPUT_VM
+ #if ML_WILDS_MOVES
+diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
+index 1c6d17ca..b1192088 100644
+--- a/integration/c/world_adapter.inc
++++ b/integration/c/world_adapter.inc
+@@ -17,13 +17,29 @@ extern void ml_wilds_focus(unsigned);
+ /* Included in the guarded native adapter. Private actions never enter GU's
+  * stock weapon switch. Native hurt/scene requests retain their destination. */
+ static WState world;
++/* GU 1.4.0 uses this predicate at 2f92e8 to select Cleanser while
++ * encased. It covers pending ailment fields and the native action phases. */
++static unsigned world_native_restraint(void *a)
++{
++    return ((unsigned (*)(void *))(main_base+0x2a98ac))(a);
++}
++/* Native status requests can precede their actor field. These are the
++ * five Cleanser families plus the stock KO entry from Damage2ee508. */
++static unsigned world_status_request(unsigned state,unsigned action)
++{
++    if(state!=64)return 0;
++    return action==26||(action>=39&&action<=47&&action!=41)||action==63||
++        (action>=53&&action<=62&&action!=55)||(action>=66&&action<=73&&action!=67)||
++        (action>=102&&action<=111&&action!=104)||action==140||
++        (action>=121&&action<=130&&action!=123);
++}
+ #if ML_WILDS_MOVES
+ static NativeCall world_original_pad_map;
+ static NativeCall world_original_target_selection;
+ static NativeCall world_original_player_input_filter;
+ static YuzuTrigger world_rt[9];
+ static YuzuGroundDraw world_ground_draw[9];
+-static unsigned world_rb[9],world_physical_y[9];
++static unsigned world_rb[9],world_physical_y[9],world_restraint_keys[9];
+ static struct { void *actor; unsigned epoch; int pad; YuzuAdeptRun input; } adept_run;
+ static void *world_spirit_draw_actor;
+ static void *world_sprint_sheathe_actor;
+@@ -67,6 +83,7 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+     u32 bits = word(packet, 0);
+     void *hunter = world_local_hunter();
+     unsigned supported = local_long_sword(hunter) && (int16_t)u16(hunter, HP) > 0;
++    unsigned restrained=supported&&world_native_restraint(hunter);
+     unsigned state=supported?u16(hunter,STATE):0,action=supported?u16(hunter,ACTION):0;
+     unsigned drawn = supported && ((byte(hunter, DRAWN) & 1) ||
+         (world.actor == (u32)(uptr)hunter && world.move) ||
+@@ -80,7 +97,18 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+         uptr offset=pad_state-pad-0x1d0;
+         unsigned slot=offset/0xb50;
+         if(slot<9&&offset%0xb50==0){
+-            world_physical_y[slot]=bits&YUZU_PAD_X;
++            if(restrained){
++                /* GU needs the original buttons for struggling and items.
++                 * Spend held attack buttons until the player releases them. */
++                world_restraint_keys[slot]=bits&(YUZU_PAD_AX|YUZU_PAD_ZR|0xc000u);
++                world_rt[slot]=(YuzuTrigger){0};
++                world_ground_draw[slot]=(YuzuGroundDraw){0};
++                world_rb[slot]=world_air_draw_pad[slot]=world_combat_pad[slot]=0;
++                return result;
++            }
++            world_restraint_keys[slot]&=bits;
++            mapping_bits&=~world_restraint_keys[slot];
++            world_physical_y[slot]=mapping_bits&YUZU_PAD_X;
+             if(adept_run.actor&&adept_run.pad==(int)slot){
+                 if(!supported||hunter!=adept_run.actor||byte(hunter,AREA)!=adept_run.epoch||
+                    u16(hunter,STATE)!=1||u16(hunter,ACTION)!=GU_ADEPT_RUN)adept_run.actor=0;
+@@ -97,7 +125,7 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+                     }
+                 }
+             }
+-            yuzu_trigger_sample(&world_rt[slot],bits);
++            yuzu_trigger_sample(&world_rt[slot],mapping_bits);
+             world_rb[slot]=(bits&0xffffu)==YUZU_PAD_R;
+             if(world_rt[slot].blocked)mapping_bits&=~YUZU_PAD_ZR;
+             unsigned airborne=supported&&world_spirit_airborne(hunter,state);
+@@ -109,7 +137,7 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+             unsigned air=supported&&!drawn&&yuzu_aerial_spirit_draw_pose(state,airborne);
+             unsigned native_bits=yuzu_aerial_spirit_input(mapping_bits,&world_rt[slot],air);
+             world_air_draw_pad[slot]=native_bits!=mapping_bits;
+-            world_combat_pad[slot]=supported?yuzu_combat_pad(bits,mapping_bits,drawn,world_air_draw_pad[slot]):0;
++            world_combat_pad[slot]=supported?yuzu_combat_pad(bits&~world_restraint_keys[slot],mapping_bits,drawn,world_air_draw_pad[slot]):0;
+             mapping_bits=native_bits;
+         }
+     }
+@@ -387,7 +415,7 @@ static u32 world_hp(void *a,int damage,void *result,u32 flags)
+ static u32 world_damage(void *a)
+ {
+     if(!local_supported(a)||world.actor!=(u32)(uptr)a||world.epoch!=byte(a,AREA)||
+-       (int16_t)u16(a,HP)<=0)return world_original_damage(a);
++       (int16_t)u16(a,HP)<=0||world_native_restraint(a))return world_original_damage(a);
+     unsigned packet=byte(a,0x31e0),type=byte(a,0x3216);
+     unsigned eligible=packet&&(int16_t)u16(a,0x321c)>=0&&world_counter_type(type);
+     if(packet&&world.move)log_event("world_incoming",(u32)(uptr)a,world.source,(u32)real(a,FRAME),type|(eligible<<16));
+@@ -840,6 +868,7 @@ static void world_type2_hunter_art_pad(void *a)
+ 
+ static u32 world_player_input_filter(void *a,u32 b,u32 c,u32 d)
+ {
++    if(local_long_sword(a)&&world_native_restraint(a))return world_original_player_input_filter(a,b,c,d);
+     world_type2_hunter_art_pad(a);
+     if(!local_long_sword(a))return world_original_player_input_filter(a,b,c,d);
+     world_spirit_draw_actor=0;
+@@ -959,7 +988,7 @@ static unsigned world_focus_replay(void *a,const WObservation *o,WDecision d)
+ #if ML_WILDS_MOVES
+ /* GU stores 1,000 Valor points. Its native functions own blue mode and the HUD. */
+ enum { VALOR_COUNTER_BUILD=90, VALOR_COUNTER_REFILL=18,
+-       VALOR_RISE_COST=30, VALOR_DIVE_COST=25, VALOR_RECKONING_COST=35 };
++       VALOR_RISE_COST=55, VALOR_DIVE_COST=45, VALOR_RECKONING_COST=100 };
+ 
+ static void world_valor_meter(void *a,int points,unsigned action)
+ {
+@@ -1629,10 +1658,47 @@ static void world_clear_player_input(void)
+     world_r_gate.active=focus_native.active=0;focus_lead_time=focus_strike_time=0;
+ }
+ #endif
++static void *world_restrained_actor;
++static unsigned world_restrained_epoch;
++static void world_yield_to_status(void *a,unsigned state,unsigned action)
++{
++    if(world_restrained_actor==a&&world_restrained_epoch==byte(a,AREA)&&!world.move&&world_armor<=0)return;
++    world_restrained_actor=a;world_restrained_epoch=byte(a,AREA);
++    unsigned source=world.source;
++    if(world.actor==(u32)(uptr)a&&world.epoch==byte(a,AREA)){
++        if(world.move>=W_RISE&&world.move<=W_LAND)
++            write_event("helm_interrupt_exit",(u32)(uptr)a,world.move,state,action);
++        if(world_air_owner(a))world_zero_velocity(a);
++        world_physics_end(a);
++        world_commit(a,w_leave(&world));
++        world_cleanup(a);
++        w_clear_player_input(&world);
++        world_follow_clear();
++        world_armor=0;
++#if ML_WILDS_MOVES
++        world_clear_player_input();
++        adept_run.actor=world_idle_actor=0;potion_draw.actor=0;
++        entry_turn.actor=roll_turn.actor=focus_thrust_turn.actor=0;
++        world_spirit_draw_actor=world_sprint_sheathe_actor=0;
++        world_iai_body_actor=helm_guard_ticks=world_loop_actor=0;
++#endif
++    }
++    write_event("native_status_enter",(u32)(uptr)a,state,action,source);
++}
++static void world_status_resumed(void *a)
++{
++    if(!world_restrained_actor)return;
++    if(world_restrained_actor==a&&world_restrained_epoch==byte(a,AREA))
++        write_event("native_status_resume",(u32)(uptr)a,u16(a,STATE),u16(a,ACTION),0);
++    world_restrained_actor=0;
++}
+ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned flags)
+ {
+-    MLObservation raw=observe(a,0);w_keys_tick(&world.keys,&raw);
+     if(world.actor!=(u32)(uptr)a||world.epoch!=byte(a,AREA)||(int16_t)u16(a,HP)<=0)return 0;
++    /* Status requests already went to GU. Ordinary damage recoil uses the
++     * same two-second protection after the sword action in every style. */
++    if(world_damage_depth&&world_armor>0&&(state==4||state==8||state==64))return 1;
++    MLObservation raw=observe(a,0);w_keys_tick(&world.keys,&raw);
+ #if ML_WILDS_MOVES
+     unsigned bits=world_pad_bits(),edge=bits&~wilds_input_previous;
+     if(hunter_art_held()){
+@@ -1907,8 +1973,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+             return 1;
+         }
+     }
+-    if(world_damage_depth&&world_armor>0&&(int16_t)u16(a,HP)>0&&
+-       (state==4||state==8||state==64))return 1;
++
+ #if ML_WORLD_INPUT_VM
+     unsigned attack=state==16&&w_guild_attack(action);
+     /* Native stick+B uses side rolls 13/14 before the combo VM runs. */
+@@ -2120,6 +2185,11 @@ static void world_trace_party(void *local)
+ 
+ static unsigned world_update(void *a,const MLObservation *b)
+ {
++    if(world_native_restraint(a)){
++        world_yield_to_status(a,u16(a,STATE),u16(a,ACTION));
++        return 0;
++    }
++    world_status_resumed(a);
+ #if ML_WILDS_MOVES
+     /* Fresh physical chords only. State, resource, red-rank and gauge gates
+      * are validated again by w_wilds_enter when the request is committed. */
+diff --git a/integration/c/world_detector.inc b/integration/c/world_detector.inc
+index 87144455..bbcd4b16 100644
+--- a/integration/c/world_detector.inc
++++ b/integration/c/world_detector.inc
+@@ -61,7 +61,7 @@ static void world_detector_tick(void *a,float dt)
+ }
+ static void world_counter_accept(void *a,unsigned type)
+ {
+-    if(world_counter_seen)return;
++    if(world_counter_seen||world_native_restraint(a))return;
+     world_counter_seen=1;
+ #if ML_WILDS_MOVES
+     if(world.source==918)world_red_time(a,RED_AURA_REFUND,919);
+@@ -202,7 +202,7 @@ static u32 world_player_query(void *manager,void *attack,void *a)
+                 unsigned wake=u16(a,STATE)==64&&u16(a,ACTION)==26;
+                 write_event(wake?"ally_wake_contact":"ally_contact",ally-1,u16(attack,0x34),
+                             u16(a,STATE)<<16|u16(a,ACTION),byte(a,0x3216));
+-                if(!wake)*(unsigned char *)((uptr)a+0x31e0)=0;
++                if(!wake&&!world_native_restraint(a))*(unsigned char *)((uptr)a+0x31e0)=0;
+             }
+         }
+     }

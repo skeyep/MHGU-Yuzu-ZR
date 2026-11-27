@@ -2,7 +2,9 @@
 
 把《世界／冰原》的见切、居合、登龙和《荒野》的赤刃、气刃蓄力、练气解放带进《怪物猎人 GU》。六种狩猎风格都能用这套太刀，勇气刚气刃、武士道无双斩等原生招式仍可使用。
 
-**[下载 v1.2.28 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.28/MHGU-Yuzu-ZR-v1.2.28.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
+**[下载 v1.2.29 整合包](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/download/v1.2.29/MHGU-Yuzu-ZR-v1.2.29.zip)** · [更新记录](CHANGELOG.md) · [来源与修改说明](SOURCES.md) · [项目源码](source/BUILD.md)
+
+v1.2.29 调整了勇气模式的消耗。完整登龙和气刃无双斩终结各消耗 10% 勇气槽，登龙按升空和下劈分段扣除。被泥或雪裹住时，当前太刀招式会中止。按原版方式挣脱或使用消散剂，解除后可以重新出刀。
 
 v1.2.28 勇气风格恢复原生普通斩和刚气刃连段。收刀移动时按住 RB 跑步，RT 气刃拔刀。见切和居合可积攒勇气槽，登龙和无双斩按招式消耗勇气槽。
 
@@ -36,7 +38,7 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 ## 安装
 
-1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.28.zip`，双击 **Install.cmd**。
+1. 退出游戏。下载并解压 Releases 中的 `MHGU-Yuzu-ZR-v1.2.29.zip`，双击 **Install.cmd**。
 2. 如果安装器列出重复的太刀、Forge、跳字或轮盘插件，把对应旧目录移到游戏模组目录之外，再运行安装器。
 3. 到 Yuzu 的游戏属性，启用 **MHGU-ZR-Integrated**。启用 **MHGU-Xbox-Prompts** 可显示 Xbox 按键。切换提示后重启游戏。
 4. 在 Yuzu 控制器配置里确认 Xbox **RT 对应 ZR**，**RB 对应 R**，**LT 对应 ZL**，**LB 对应 L**。
@@ -88,7 +90,7 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 勇气风格收刀移动时按住 **RB** 跑步，按 **RT** 气刃拔刀。入蓝后，**Y** 接原生普通斩，**RT** 接刚气刃。地面攻击收势时按 **X** 可进入勇气纳刀，小居合从第 24 帧起可预输入，最早第 42 帧接上。
 
-勇气槽上限为 1,000 点。见切、小居合或大居合成功迎击并命中时，入蓝前基础增加 90 点，入蓝后基础回复 18 点。GU 会按太刀状态和技能倍率结算并取整，蓝中一次反击可能只回 3 点。其他原本升刃的奖励也计入勇气槽。蓝刃登龙升空消耗 30 点，下劈再耗 25 点，完整一套共 55 点。气刃无双斩终结消耗 35 点。蓝刃登龙沿用红刃伤害档，落地按普通登龙收势。
+勇气槽上限为 1,000 点。见切、小居合或大居合成功迎击并命中时，入蓝前基础增加 90 点，入蓝后基础回复 18 点。GU 会按太刀状态和技能倍率结算并取整，蓝中一次反击可能只回 3 点。其他原本升刃的奖励也计入勇气槽。蓝刃登龙在升空时消耗 55 点，出下劈时再耗 45 点，完整一套消耗 100 点（满槽的 10%）。起跳前被打断不扣槽，起跳后至下劈前被打断只扣 55 点。气刃无双斩发动终结段时消耗 100 点。蓝刃登龙沿用红刃伤害档，落地按普通登龙收势。
 
 武士道大居合 GP 成功后按 **Y** 进入拖刀，拖刀减速时自动出一文字斩。拖刀中松开再按 **Y** 可在原生窗口提前出刀，气刃足够时再按 **RT** 接气刃无双斩，收势按 **RT＋A** 特殊纳刀。原生精准回避后的 Y 也能进入同一条路线。
 
@@ -114,13 +116,15 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 In Valor Style, hold **RB** and move to sprint with the sword sheathed. Press **RT** for a Spirit draw. In blue Valor mode, **Y** follows the native slash combo and **RT** continues the native Valor Spirit Blade chain. Press **X** during a grounded attack’s recovery for Valor Sheathe. After Iai Slash, X can be buffered from frame 24 and the stance can start at frame 42.
 
-The Valor Gauge holds 1,000 points. A successful Foresight Slash, Iai Slash or Iai Spirit Slash counter must land its cut to add 90 base points before blue mode or 18 base points in blue mode. GU applies weapon-state and skill modifiers and rounds down. A blue-mode counter can restore as little as 3 points. Other Spirit-level rewards also build or refill the Valor Gauge. In blue mode, Helm Breaker costs 30 points on ascent and 25 on descent, for a total of 55. The Spirit Reckoning finisher costs 35 points. Blue Helm Breaker uses red-tier damage and the standard landing recovery.
+The Valor Gauge holds 1,000 points. A successful Foresight Slash, Iai Slash or Iai Spirit Slash counter must land its cut to add 90 base points before blue mode or 18 base points in blue mode. GU applies weapon-state and skill modifiers and rounds down. A blue-mode counter can restore 3 points. Other Spirit-level rewards also build or refill the Valor Gauge. In blue mode, Helm Breaker costs 55 points at takeoff and 45 when the downward slash starts. Completing both stages costs 100 points (10% of a full gauge). An interruption before takeoff costs nothing. An interruption between takeoff and the downward slash costs 55 points. Starting the Spirit Reckoning finisher costs 100 points. Blue Helm Breaker uses red-tier damage and the standard landing recovery.
+
+Mud and snow stop an active Long Sword move when they encase your hunter. Break free or use Cleanser to resume attacking.
 
 After a successful Adept Iai Spirit Slash, press Y to dash. The dash now links into Ichimonji as it slows. Press Y again during the dash for an earlier cut. At red Spirit level, Spirit Thrust now starts at frame zero and plays at 1.25× speed from either Iai slash, red Foresight Slash or Spirit Roundslash.
 
-With 1.2.28 installed on all participating clients, each hunter can see other players perform Long Sword moves and hear the Spirit Helm Breaker impact. A blade hit wakes a stunned teammate and lets an active teammate keep attacking or charging. Press RT + Y during Spirit Roundslash recovery to link into Spirit Thrust. A hit with an active Spirit level starts Helm Breaker.
+With 1.2.29 installed on all participating clients, each hunter can see other players perform Long Sword moves and hear the Spirit Helm Breaker impact. A blade hit wakes a stunned teammate and lets an active teammate keep attacking or charging. Press RT + Y during Spirit Roundslash recovery to link into Spirit Thrust. A hit with an active Spirit level starts Helm Breaker.
 
-For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.28 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.28), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
+For **Windows Yuzu 1734** and **international MHGU 1.4.0**. Download the [v1.2.29 release ZIP](https://github.com/skeyep/MHGU-Yuzu-ZR/releases/tag/v1.2.29), close the game, extract it, and run **Install.cmd**. Enable **MHGU-ZR-Integrated** and optionally **MHGU-Xbox-Prompts** in Yuzu.
 
 All six hunting styles can use Foresight, Special Sheathe, Iai and Helm Breaker. Styles that reach red Spirit level also gain Crimson Slash and the red Helm Breaker follow-up, Spirit Release. **RT** (Switch ZR) handles Spirit attacks, including native aerial draws. With the sword sheathed, hold a direction with RT for moving Spirit Blade I. **RT+A** is Special Sheathe, **RT+B** is Foresight, and **RT+Y** is Spirit Thrust. Hold **LB** for the item wheel. Use Type 2 controls for Hunter Arts with **LT+Y**, **LT+X**, and **LT+A**.
 
