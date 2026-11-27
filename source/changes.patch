@@ -294,7 +294,7 @@ index 4f891d1..8d0ab93 100644
  #define WILDS_RELEASE_ROW 168u
  #define WILDS_RELEASE_SHAPE 16u
 diff --git a/integration/c/wilds_controller.inc b/integration/c/wilds_controller.inc
-index 06203ec..1ed4e7d 100644
+index 06203ec..6e21c72 100644
 --- a/integration/c/wilds_controller.inc
 +++ b/integration/c/wilds_controller.inc
 @@ -4,6 +4,7 @@ static WDecision wilds_phase(WState *s,const WObservation *o,unsigned source)
@@ -436,7 +436,7 @@ index 06203ec..1ed4e7d 100644
                  s->wilds_direction_pending=0;WObservation next=*o;
                  next.base.heading=s->wilds_direction_heading;next.base.input_heading=s->wilds_direction_input;
                  next.base.magnitude=100;
-@@ -179,28 +226,38 @@ static WDecision wilds_bridge(WState *s,const WObservation *o,unsigned source)
+@@ -179,28 +226,40 @@ static WDecision wilds_bridge(WState *s,const WObservation *o,unsigned source)
              }
          }
      }
@@ -451,7 +451,9 @@ index 06203ec..1ed4e7d 100644
 +        if((edge&ML_R)&&b->held==ML_R)s->queued=W_RELEASE;
 +        if(s->queued==W_RELEASE){
 +            if(b->held&~ML_R)s->queued=0;
-+            else if(b->animation_frame>=25){
++            else if(b->animation_frame>=25&&
++                    (!w_foresight_stage(174,b->animation_frame,w_event(174,b->animation_frame))||
++                     !(s->keys.waiting&ML_R))){
 +                s->queued=0;return w_wilds_enter(s,o,W_RELEASE);
 +            }
 +        }
@@ -483,7 +485,7 @@ index 06203ec..1ed4e7d 100644
              if(b->native_action==25&&(o->previous_weapon_action==18||o->previous_weapon_action==19||
                 o->previous_weapon_action==23||o->previous_weapon_action==24))
                  return (WDecision){.kind=W_NATIVE_R,.heading=b->heading};
-@@ -238,25 +295,35 @@ static unsigned wilds_red_follow_r(WState *s,const MLObservation *b,unsigned edg
+@@ -238,25 +297,35 @@ static unsigned wilds_red_follow_r(WState *s,const MLObservation *b,unsigned edg
      return b->animation_frame>=cancel&&s->wilds_r_pending&&s->wilds_r_wait>0;
  }
  
@@ -526,7 +528,7 @@ index 06203ec..1ed4e7d 100644
      if(b->animation_frame>=106||b->motion_finished)return wilds_finish(s,W_IDLE,b->heading);
      return (WDecision){0};
  }
-@@ -271,7 +338,7 @@ static unsigned wilds_charge_window(const WState *s,const WObservation *o)
+@@ -271,7 +340,7 @@ static unsigned wilds_charge_window(const WState *s,const WObservation *o)
      case W_CRIMSON_MOVING:return o->valor?0:50;
      case W_CRIMSON_RETREAT:return o->valor?0:90;
      case 906:return o->valor?0:49;
@@ -535,7 +537,7 @@ index 06203ec..1ed4e7d 100644
      case 903:case 910:case 911:return 56;
      case 912:return 60;
      case W_SPIRIT_TWO_FORWARD:return 62;
-@@ -285,6 +352,46 @@ static unsigned wilds_charge_window(const WState *s,const WObservation *o)
+@@ -285,6 +354,50 @@ static unsigned wilds_charge_window(const WState *s,const WObservation *o)
      }
  }
  
@@ -564,6 +566,10 @@ index 06203ec..1ed4e7d 100644
 +    unsigned stage=w_wilds_follow_stage(s->source,b->animation_frame,kind);
 +    if(!stage)s->wilds_follow_keys=0;
 +    if(!(stage&2))return (WDecision){0};
++    /* B-first needs the same short partner grace as the native pad. A
++     * solitary thrust remains queued and executes once the grace expires. */
++    if(kind==W_FOLLOW_THRUST&&(s->keys.waiting&ML_A)&&
++       w_foresight_stage(s->source,b->animation_frame,0))return (WDecision){0};
 +    WObservation next=*o;
 +    next.base.input_heading=s->wilds_follow_heading;
 +    next.base.magnitude=s->wilds_follow_magnitude;
@@ -582,7 +588,7 @@ index 06203ec..1ed4e7d 100644
  static WDecision wilds_step(WState *s,const WObservation *o)
  {
      const MLObservation *b=&o->base;const WildsClip *clip=wilds_clip(s->source);
-@@ -294,97 +401,110 @@ static WDecision wilds_step(WState *s,const WObservation *o)
+@@ -294,97 +407,110 @@ static WDecision wilds_step(WState *s,const WObservation *o)
          s->wilds_sample=b->sample_sequence;
          pressed=b->held&~s->wilds_previous;s->wilds_previous=b->held;
          if(b->simulation_delta>0&&b->simulation_delta<30)dt=b->simulation_delta/60;
@@ -739,7 +745,7 @@ index 06203ec..1ed4e7d 100644
          s->wilds_r_pending=1;s->wilds_r_wait=.10f;
          wilds_spirit_direction(s,b);
          if(repeat_x){
-@@ -400,66 +520,65 @@ static WDecision wilds_step(WState *s,const WObservation *o)
+@@ -400,66 +526,65 @@ static WDecision wilds_step(WState *s,const WObservation *o)
          else if(s->wilds_r_pending&&(pressed&ML_X)&&s->spirit_crimson_pending!=W_SPIRIT_CRIMSON_NEXT)
              wilds_queue_spirit_crimson(s,W_SPIRIT_CRIMSON_NEXT,b->input_heading,b->magnitude);
      }
@@ -848,7 +854,7 @@ index 06203ec..1ed4e7d 100644
              if(o->rank!=3)return wilds_native(s,o,0);
              s->heading=s->crimson_buffer_heading;
              WDecision d=wilds_phase(s,o,s->crimson_buffer_source);
-@@ -479,7 +598,7 @@ static WDecision wilds_step(WState *s,const WObservation *o)
+@@ -479,7 +604,7 @@ static WDecision wilds_step(WState *s,const WObservation *o)
              return wilds_phase(s,o,next);
          }
      }
@@ -857,7 +863,7 @@ index 06203ec..1ed4e7d 100644
         !(s->move==W_FOCUS&&s->wilds_focus_break&&(s->source==905||s->source==913))){
          if(b->held&~ML_X)s->spirit_crimson_pending=0;
          else if(pressed&ML_X)wilds_queue_spirit_crimson(s,W_SPIRIT_CRIMSON_INPUT,b->input_heading,b->magnitude);
-@@ -490,24 +609,29 @@ static WDecision wilds_step(WState *s,const WObservation *o)
+@@ -490,24 +615,33 @@ static WDecision wilds_step(WState *s,const WObservation *o)
              return w_wilds_enter(s,&next,W_CHIJIN);
          }
      }
@@ -875,16 +881,21 @@ index 06203ec..1ed4e7d 100644
          }
 -        if((pressed&(ML_R|ML_X|ML_A))&&(b->held==(ML_R|ML_X)||b->held==(ML_R|ML_A))&&
 +        if(!source_chords&&(pressed&(ML_R|ML_X|ML_A))&&(b->held==(ML_R|ML_X)||
-+           (b->held==(ML_R|ML_A)&&s->source!=W_CRIMSON_SPIN))&&
++           (b->held==(ML_R|ML_A)&&s->source!=W_CRIMSON_SPIN&&s->source!=917))&&
             !(b->held==(ML_R|ML_X)&&repeat&&s->wilds_r_pending))
              return enter(s,o,b->held&ML_A?W_FORESIGHT:W_THRUST,b->held);
 -        if(!holding_charge&&s->wilds_r_pending&&s->wilds_r_wait<=0)return wilds_spirit_follow(s,o);
 -        if((pressed&ML_X)&&s->move!=W_CHIJIN)return wilds_native(s,o,0);
+-        if(pressed&ML_A)return wilds_native(s,o,s->move==W_SLIDE?4:25);
 +        if((pressed&ML_X)&&s->move!=W_CHIJIN){
 +            if(o->rank==3)return enter(s,o,W_CHIJIN,ML_X);
 +            return wilds_native(s,o,0);
 +        }
-         if(pressed&ML_A)return wilds_native(s,o,s->move==W_SLIDE?4:25);
++        if(s->source==917&&o->drawn&&frame<W_ROUND_SHEATHE_FRAME){
++            if(b->held&~ML_A)s->wilds_follow_keys=0;
++            else if(pressed&ML_A)s->wilds_follow_keys=ML_A;
++            if(s->wilds_follow_keys&&!(s->keys.waiting&ML_A))return wilds_native(s,o,25);
++        }else if(pressed&ML_A)return wilds_native(s,o,s->move==W_SLIDE?4:25);
      }
 -    /* Let movement or a new command interrupt the stand-up from the old exit point. */
 -    unsigned skip_rise=s->move==W_RELEASE&&frame>=W_RELEASE_RECOVERY_CANCEL&&
@@ -896,7 +907,7 @@ index 06203ec..1ed4e7d 100644
      return (WDecision){0};
  }
 diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
-index 938b648..9c268fc 100644
+index 938b648..18947ee 100644
 --- a/integration/c/world_adapter.inc
 +++ b/integration/c/world_adapter.inc
 @@ -5,14 +5,13 @@ static unsigned wilds_focus_active;
@@ -915,7 +926,7 @@ index 938b648..9c268fc 100644
  extern void ml_wilds_focus(unsigned);
  #endif
  /* Included in the guarded native adapter. Private actions never enter GU's
-@@ -21,61 +20,70 @@ static WState world;
+@@ -21,63 +20,72 @@ static WState world;
  #if ML_WILDS_MOVES
  static NativeCall world_original_pad_map;
  static NativeCall world_original_target_selection;
@@ -1028,8 +1039,11 @@ index 938b648..9c268fc 100644
 +    if (valor_guard_pad(mapped)) mapped |= PAD_R;
 +    if (mapped != bits) put(packet, 0, mapped);
      return result;
- }
+-}
++}
  #endif
+ #include "world_gauge_gain.h"
+ static unsigned world_normal_gauge_tenths;
 @@ -86,7 +94,17 @@ static u32 world_gauge_gain(void *a,u32 amount,u32 c,u32 d)
  {
      int gain=(int)amount;
@@ -1058,6 +1072,15 @@ index 938b648..9c268fc 100644
  #if ML_WORLD_INPUT_VM
  static unsigned world_input_trace_sample,world_input_trace_actor,world_input_trace_flags[5];
  static void world_input_trace(void *a,const WObservation *o)
+@@ -145,7 +165,7 @@ static void world_input_trace(void *a,const WObservation *o)
+ #endif
+ /* Preserve a native solo request until its raw key has matured AND source
+  * TIML permits execution. The raw-key clock already ran during recovery. */
+-enum { WORLD_R_WAIT_RELEASE=4 }; /* Physical button slots occupy 0..3. */
++enum { WORLD_R_WAIT_RELEASE=4,WORLD_COUNTER_RT,WORLD_COUNTER_B }; /* Physical button slots occupy 0..3. */
+ static struct {unsigned active,actor,epoch,motion,generation,action,flags,button,owner_action,owner_state;} world_r_gate;
+ #include "world_hits.h"
+ static unsigned world_bound,world_bound_actor,world_bound_action,world_last_sample;
 @@ -262,6 +282,7 @@ static int world_open_hit(void *a,unsigned slot,unsigned row,unsigned flags)
  static u32 (*world_original_damage)(void *);
  static u32 (*world_original_hp)(void *,int,void *,u32);
@@ -1125,6 +1148,15 @@ index 938b648..9c268fc 100644
  #if ML_WILDS_MOVES
      world_action_armor_depth-=action_armor;
  #endif
+@@ -521,7 +550,7 @@ static unsigned world_focus_thrust_heading(void *a,unsigned *aim)
+     if(owned)*aim=turn->yaw;
+     return owned;
+ }
+-
++
+ static unsigned crimson_split_heading,crimson_travel_heading;
+ static unsigned world_crimson_bound(void *a)
+ {
 @@ -708,6 +737,7 @@ static u32 world_focus_turn(void *a)
  #else
  #include "world_effects.inc"
@@ -1503,7 +1535,7 @@ index 938b648..9c268fc 100644
  #if ML_WILDS_MOVES
 -            if((d.move==W_CHIJIN||d.move==W_SLIDE)&&!(byte(a,DRAWN)&1)){
 +            if(!(byte(a,DRAWN)&1)&&(d.move==W_CHIJIN||d.move==W_SLIDE||d.move==W_THRUST||
-+               d.move==W_SHEATHE||d.source==W_CRIMSON_SPIN)){
++               d.move==W_SHEATHE||d.move==W_FORESIGHT||d.source==W_CRIMSON_SPIN)){
                  ((void (*)(void *,unsigned))(main_base+0x2a2560))(a,1);
 -                log_event(d.move==W_SLIDE?"wilds_slide_draw":"wilds_red_draw",
 -                    (u32)(uptr)a,u16(a,STATE),u16(a,ACTION),byte(a,DRAWN));
@@ -1576,7 +1608,7 @@ index 938b648..9c268fc 100644
             ((edge&0x6200u)&&keys==(ML_R|ML_A));
  }
  static void valor_guard_input(void *a,unsigned keys,unsigned edge)
-@@ -1381,22 +1536,104 @@ static void valor_link_collect(void *a,const MLObservation *b,unsigned edge,unsi
+@@ -1381,22 +1536,125 @@ static void valor_link_collect(void *a,const MLObservation *b,unsigned edge,unsi
      }
  }
  #endif
@@ -1610,11 +1642,32 @@ index 938b648..9c268fc 100644
 +        return adept_run.actor==a&&adept_run.epoch==byte(a,AREA)&&
 +            adept_run.pad==draw_pad&&adept_run.input.waiting;
 +    }
++    unsigned counter_packet=state==16&&(w_guild_attack(action)||action==GU_RECKONING);
++    unsigned recovery=w_native_counter_stage(current,current_action,raw.motion,raw.phase,
++                                               raw.animation_frame,crimson_available(a));
++    if(!world.move&&recovery&&counter_packet&&world_ready(a)&&!(word(a,AIR)&0x400)){
++        if(w_fresh_counter(world.finisher_sheathe_keys,raw.held)||world.counter_pending)return 1;
++        if((raw.held==ML_R||raw.held==ML_A)&&(world.keys.waiting&raw.held)){
++            world_r_gate=(__typeof__(world_r_gate)){.active=1,.actor=raw.actor,.epoch=raw.epoch,
++                .motion=raw.motion,.generation=bind_generation,.action=action,.flags=flags,
++                .button=raw.held==ML_R?WORLD_COUNTER_RT:WORLD_COUNTER_B,
++                .owner_action=current_action,.owner_state=current};
++            return 1;
++        }
++    }
 +    /* A real GU Spirit Step owns its native variant and flags. A neutral
 +     * held RT still takes the ordinary charge/release path below. */
 +    if(!world.move&&state==16&&(action==48||action==49)&&
 +       w_fade_source(w_guild_source(current,current_action,u16(a,MOTION)))&&
 +       raw.magnitude>=50&&!(raw.held&~ML_R)&&!world.gu_chord_wait){
++        unsigned source=w_guild_source(current,current_action,raw.motion);
++        if(raw.held==ML_R&&(world.keys.waiting&ML_R)&&
++           w_foresight_stage(source,raw.animation_frame,w_event(source,raw.animation_frame))){
++            world_r_gate=(__typeof__(world_r_gate)){.active=1,.actor=raw.actor,.epoch=raw.epoch,
++                .motion=raw.motion,.generation=bind_generation,.action=action,.flags=flags,
++                .button=WORLD_COUNTER_RT,.owner_action=current_action,.owner_state=current};
++            return 1;
++        }
 +        world.fade_step_pending=0;world_r_gate.active=0;
 +        return 0;
 +    }
@@ -1683,7 +1736,7 @@ index 938b648..9c268fc 100644
              world_wilds_pending=W_SLIDE;
              return 1;
          }
-@@ -1405,8 +1642,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1405,8 +1663,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      unsigned upper=state==16&&(action<=7||action==25||action==41);
      unsigned spirit_one=!world.move&&w_spirit_one_crimson_source(current,current_action,u16(a,MOTION));
      if(!spirit_one&&!world.move&&red_roll&&upper&&(byte(a,DRAWN)&1)&&!(word(a,AIR)&0x400)&&
@@ -1693,7 +1746,7 @@ index 938b648..9c268fc 100644
          if(!wilds_roll_x&&!wilds_roll_input){
              MLObservation input=observe(a,1);
              world_roll_crimson_input(&input);
-@@ -1440,15 +1676,13 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1440,15 +1697,13 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
          unsigned valid=((current==1||current==2)&&act<=5)||(current==16&&act<154&&real(a,FRAME)>=24);
          unsigned mv=0;
          if(byte(a,DRAWN)&1){
@@ -1712,7 +1765,7 @@ index 938b648..9c268fc 100644
          }
          if(mv){world_wilds_pending=mv;log_event("wilds_input_reserve",(u32)(uptr)a,mv,state,action);return 1;}
      }
-@@ -1517,7 +1751,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1517,7 +1772,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
          unsigned ordinary=src==1||src==101||src==102||src==103||src==105||src==107;
          unsigned window=src==1||(ordinary&&real(a,FRAME)>=24);
          const WEvent *cancel=w_event(src,real(a,FRAME));
@@ -1721,7 +1774,7 @@ index 938b648..9c268fc 100644
          unsigned packet=(state==16&&w_guild_attack(action))||((state==1||state==2)&&action<=14);
          if(packet&&window&&raw.held==(ML_R|ML_B)&&
             (src==1||sheath))return 1;
-@@ -1542,7 +1776,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1542,7 +1797,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
              return 1;
          }
          if(state==16&&spirit_packet&&raw.held==ML_R&&w_spirit_charge_source(src))return 1;
@@ -1730,7 +1783,7 @@ index 938b648..9c268fc 100644
          if(u16(a,ACTION)==30&&src==109&&((state==1||state==2)&&action<=5)&&
             real(a,FRAME)<w_clip(109)->length-1)return 1;
      }
-@@ -1573,6 +1807,17 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1573,6 +1828,17 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      if(world.move){
          if((attack||roll||((state==1||state==2)&&action<=5)) &&
             u16(a,STATE)==16 && u16(a,ACTION)==w_action(world.move))return 1;
@@ -1748,7 +1801,7 @@ index 938b648..9c268fc 100644
          world_physics_end(a);
          world_commit(a,w_leave(&world));world_cleanup(a);
          world.controls=(WControls){0};
-@@ -1594,7 +1839,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1594,7 +1860,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      if(attack&&(action==16||action==17||action==18||action==19||action==26||action==27)&&
         w_guild_spirit_opener(u16(a,ACTION),u16(a,MOTION),u16(a,0x250c)))return 1;
      unsigned partner=held&(ML_X|ML_A|ML_B|ML_Y|ML_ZR);
@@ -1760,7 +1813,7 @@ index 938b648..9c268fc 100644
      /* GU can offer the draw-upper before the command VM sees this pad
       * sample. The same thrust's X edge owns the native combo upper. */
      if(attack&&action==7&&((source==105&&u16(a,ACTION)==4)||(source==112&&u16(a,ACTION)==22))&&event&&
-@@ -1609,11 +1857,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1609,11 +1878,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
         world_r_gate.generation==bind_generation&&world_r_gate.motion==u16(a,MOTION)&&
         world_r_gate.owner_action==u16(a,ACTION))return 1;
      if(event&&world.input_motion==u16(a,MOTION)&&!(held&(ML_Y|ML_ZR))){
@@ -1774,7 +1827,7 @@ index 938b648..9c268fc 100644
              if(world.gu_chord_wait==id||w_command_has(controls->commands.buffered,id)||
                 w_command_has(controls->commands.executable,id))return 1;
          }
-@@ -1624,10 +1871,9 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1624,10 +1892,9 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      if(attack&&(u16(a,STATE)==16||source==1)&&event&&world.input_motion==u16(a,MOTION)&&
         (held==ML_R||held==ML_X||held==ML_A)){
          unsigned button=held==ML_R?2:held==ML_A?1:0;
@@ -1788,7 +1841,7 @@ index 938b648..9c268fc 100644
          const WButton *key=controls->buttons+button;
          /* Idle has the global execute bit, not per-command TIML bits. */
          if(source==1)open=held==ML_R||held==ML_X;
-@@ -1640,12 +1886,8 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1640,12 +1907,8 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      }
      if(!(held&ML_R))return 0;
      if(source==1)return partner==ML_X;
@@ -1803,7 +1856,7 @@ index 938b648..9c268fc 100644
  #else
      if(world.move){
          if((state==1&&action<=14)||state==2||state==16)return 1;
-@@ -1744,7 +1986,22 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1744,7 +2007,22 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
      /* Fresh physical chords only. State, resource, red-rank and gauge gates
       * are validated again by w_wilds_enter when the request is committed. */
@@ -1827,7 +1880,7 @@ index 938b648..9c268fc 100644
      if(wilds_input_actor!=(u32)(uptr)a||wilds_input_epoch!=byte(a,AREA)){
          wilds_input_actor=(u32)(uptr)a;wilds_input_epoch=byte(a,AREA);edge=world_wilds_pending=0;
          wilds_roll_x=wilds_roll_input=0;wilds_roll_tail=0;wilds_focus_active=0;
-@@ -1758,7 +2015,11 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1758,7 +2036,11 @@ static unsigned world_update(void *a,const MLObservation *b)
          (int16_t)u16(a,HP)>0&&world_ready(a)&&b->simulation_delta>0&&
          (((state==1||state==2)&&action<=5)||(state==16&&action<154&&real(a,FRAME)>=24));
       unsigned rolling=w_native_roll(state,action);
@@ -1840,7 +1893,7 @@ index 938b648..9c268fc 100644
          wilds_roll_tail=0;wilds_roll_x=0;
       }else if(rolling){
          wilds_roll_tail=.24f;
-@@ -1766,26 +2027,38 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1766,26 +2048,38 @@ static unsigned world_update(void *a,const MLObservation *b)
          wilds_roll_tail-=b->simulation_delta/60;
          if(wilds_roll_tail<=0)wilds_roll_x=0;
       }
@@ -1884,7 +1937,7 @@ index 938b648..9c268fc 100644
       if(on&&!chord_last){static const unsigned seq[]={W_FORESIGHT,W_THRUST,W_SHEATHE,W_SMALL,W_BIG,W_DOWN,
              W_CHIJIN,W_CHARGE,W_SLIDE,W_RELEASE,W_FOCUS};
          world_debug_pending=seq[idx%11u];++idx;
-@@ -1802,8 +2075,10 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1802,8 +2096,10 @@ static unsigned world_update(void *a,const MLObservation *b)
      world_fx_tick(a);
      WObservation o={.base=*b,.state=u16(a,STATE),.previous_weapon_action=u16(a,0x250c),.drawn=byte(a,DRAWN)&1,
          .alive=(int16_t)u16(a,HP)>0,.grounded=!(word(a,AIR)&0x400),
@@ -1896,7 +1949,7 @@ index 938b648..9c268fc 100644
      static unsigned rank_actor,rank_previous;
      if(rank_actor!=(u32)(uptr)a||o.rank!=3||!o.alive){
          red_rounds=red_iai_used=0;red_aura_hold=0;
-@@ -1833,23 +2108,25 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1833,23 +2129,25 @@ static unsigned world_update(void *a,const MLObservation *b)
      }else if((b->held==ML_R&&(edge&PAD_R))||(b->held==ML_Y&&(edge&PAD_Y))){
          focus_lead_time=.10f;
      }
@@ -1925,7 +1978,7 @@ index 938b648..9c268fc 100644
      o.valor_draw_cancel=draw_cancel;
      if(draw_cancel)link_pose=5;
      if(link_pose){
-@@ -1891,11 +2168,8 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1891,11 +2189,8 @@ static unsigned world_update(void *a,const MLObservation *b)
          if(b->magnitude<50){put(a,HEADING,aim);put(a,TARGET,aim);}
          o.base.heading=aim;
      }
@@ -1938,7 +1991,7 @@ index 938b648..9c268fc 100644
  #endif
      o.contact=world_contact(a);
  #if ML_WILDS_MOVES
-@@ -1943,7 +2217,7 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1943,7 +2238,7 @@ static unsigned world_update(void *a,const MLObservation *b)
          }
          if(!o.alive||!o.resources_ready){world_normal_gauge_tenths=0;world_regen=world_helm_regen=world_armor=0;world_follow_clear();}
      }
@@ -1947,7 +2000,7 @@ index 938b648..9c268fc 100644
          ((void (*)(void *,u32,u32,u32))(main_base+0x282fd8))(a,0,0,0);
          *(unsigned char *)((uptr)a+5)=1;
          /* GU53a1dc adds two frames to positive blends and otherwise sets
-@@ -1994,7 +2268,8 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1994,7 +2289,8 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
      /* Movement intent cannot rotate a landing/release or a committed round
       * away from the contact that started the chain. */
@@ -1957,7 +2010,7 @@ index 938b648..9c268fc 100644
          put(a,HEADING,world.heading);put(a,TARGET,world.heading);o.base.heading=world.heading;
      }
  #endif
-@@ -2046,8 +2321,34 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2046,8 +2342,34 @@ static unsigned world_update(void *a,const MLObservation *b)
          log_event("wilds_potion_draw",(u32)(uptr)a,o.state,o.base.native_action,o.base.magnitude);
      }
  #endif
@@ -1992,7 +2045,7 @@ index 938b648..9c268fc 100644
      if(d.kind==W_NATIVE&&d.native_action==130&&d.valor_slide){
          valor_link=(__typeof__(valor_link)){.actor=a,.epoch=byte(a,AREA),.owner=130,.moving=1,
              .heading=d.valor_slide_heading,.input_heading=d.valor_slide_input};
-@@ -2072,14 +2373,23 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2072,14 +2394,23 @@ static unsigned world_update(void *a,const MLObservation *b)
              request.base.magnitude=wilds_slide_draw_input.magnitude;
          }
          wilds_roll_input=0;
@@ -2018,7 +2071,7 @@ index 938b648..9c268fc 100644
      if(world_debug_pending){unsigned mv=world_debug_pending;world_debug_pending=0;
          d=w_debug_enter(&world,&o,mv);
  #if ML_WILDS_MOVES
-@@ -2093,11 +2403,6 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2093,11 +2424,6 @@ static unsigned world_update(void *a,const MLObservation *b)
      world_commit(a,d);w_input_finish(&world,&o,d);
  #if ML_WILDS_MOVES
      if(wilds_clip(world.source))wilds_hit_tick(a);
@@ -2030,7 +2083,33 @@ index 938b648..9c268fc 100644
      /* Horizontal root is authored in the LMT's native usage-4 track. */
  #endif
  #if ML_WILDS_MOVES && ML_WORLD_INPUT_VM
-@@ -2162,10 +2467,12 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2117,7 +2443,8 @@ static unsigned world_update(void *a,const MLObservation *b)
+ #endif
+     if(world_r_gate.active){
+         unsigned valid=world_r_gate.actor==(u32)(uptr)a&&world_r_gate.epoch==byte(a,AREA)&&
+-            o.alive&&o.drawn&&o.grounded&&o.resources_ready&&!world.move&&
++            o.alive&&(o.drawn||(world_r_gate.button>=WORLD_COUNTER_RT&&w_native_finisher_cancel(o.state,b->native_action,b->motion)))&&
++            o.grounded&&o.resources_ready&&!world.move&&
+             u16(a,MOTION)==world_r_gate.motion&&bind_generation==world_r_gate.generation;
+ #if ML_WORLD_INPUT_VM
+         if(!valid||u16(a,STATE)!=world_r_gate.owner_state||u16(a,ACTION)!=world_r_gate.owner_action)world_r_gate.active=0;
+@@ -2129,6 +2456,15 @@ static unsigned world_update(void *a,const MLObservation *b)
+                 ++submitting;virtual_request(a,16,world_r_gate.action,world_r_gate.flags);--submitting;
+                 return 1;
+             }
++        }else if(world_r_gate.button==WORLD_COUNTER_RT||world_r_gate.button==WORLD_COUNTER_B){
++            unsigned key=world_r_gate.button==WORLD_COUNTER_RT?ML_R:ML_A;
++            if((b->held&~key)||world.counter_pending||world.queued==W_FORESIGHT)world_r_gate.active=0;
++            else if(!(world.keys.waiting&key)){
++                world.fade_step_pending=0;
++                unsigned action=world_r_gate.action,flags=world_r_gate.flags;world_r_gate.active=0;
++                ++submitting;virtual_request(a,16,action,flags);--submitting;
++                return 1;
++            }
+         }else if(!world.controls.buttons[world_r_gate.button].waiting&&!world.gu_chord_wait){
+             unsigned action=world_r_gate.action,flags=world_r_gate.flags;world_r_gate.active=0;
+             ++submitting;virtual_request(a,16,action,flags);--submitting;
+@@ -2162,10 +2498,12 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
              /* 我们的五招用自己那套判定（wilds_rows）；他这套按事件开行会 world_close_hit
               * 把刚开的行关掉（练气解放"掉刃色但没伤害"就是这个），所以这里跳过。 */
@@ -2046,7 +2125,7 @@ index 938b648..9c268fc 100644
  #endif
          }
          world_physics_tick(a);
-@@ -2173,7 +2480,7 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2173,7 +2511,7 @@ static unsigned world_update(void *a,const MLObservation *b)
              set_real(a,0x50c,0);set_real(a,0x14b0,0);
          }
      }
@@ -2055,7 +2134,7 @@ index 938b648..9c268fc 100644
  }
  #include "world_damage_compat.h"
  static unsigned world_install(void)
-@@ -2187,10 +2494,8 @@ static unsigned world_install(void)
+@@ -2187,10 +2525,8 @@ static unsigned world_install(void)
      const u32 entries[][3]={
  #if ML_WILDS_MOVES
          {0xbac204,0xe92d4ff0u,0xe24dd014u},
@@ -2067,7 +2146,7 @@ index 938b648..9c268fc 100644
          {0x2807a0,0xe30114a4u,0xe7902001u},
  #endif
          {0x2a309c,0xe92d4070u,0xe1a04000u},
-@@ -2245,18 +2550,10 @@ static unsigned world_install(void)
+@@ -2245,18 +2581,10 @@ static unsigned world_install(void)
      forge_hook_create((void *)(main_base+0x2b7240),(void *)world_open_hit,(void **)&world_original_open_hit);
      if(!world_original_open_hit)return 0;
      forge_hook_create((void *)(main_base+0xbac204),(void *)world_pad_map,(void **)&world_original_pad_map);
@@ -2230,7 +2309,7 @@ index c9c23fe..6ff93a1 100644
      if(world.source>=170&&world.source<=174)return;
      if((world.source>=901&&world.source<=918)||(world.source>=W_CRIMSON_STATIONARY&&world.source<=W_CRIMSON_SPIN)){
 diff --git a/integration/c/world_command_driver.inc b/integration/c/world_command_driver.inc
-index 47cb139..cd310b8 100644
+index 47cb139..e8e192c 100644
 --- a/integration/c/world_command_driver.inc
 +++ b/integration/c/world_command_driver.inc
 @@ -44,10 +44,31 @@ static int world_query_node(WGroundQuery *q,unsigned node)
@@ -2376,7 +2455,7 @@ index 47cb139..cd310b8 100644
          if(held==ML_R){
              if(frame>=70&&s->iai_follow_wait<=-.50f)return wilds_charge(s,&next,3);
              return (WDecision){0};
-@@ -226,6 +287,45 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -226,6 +287,79 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
  {
      const MLObservation *b=&o->base;
  #if ML_WILDS_MOVES
@@ -2385,6 +2464,40 @@ index 47cb139..cd310b8 100644
 +    unsigned native_round=!s->move&&w_native_round(o->state,b->native_action,b->motion);
 +    if(s->red_foresight_chain&&s->source==109)finisher=50;
 +    unsigned sakura_cut=!s->move&&w_sakura_final_cut(o->state,b->native_action,b->motion);
++    /* Sample the completed chord against the current action, never against
++     * the previous swing. Only an accepted chord survives button release. */
++    unsigned counter_stage=0;
++    if(!s->move){
++        counter_stage=w_native_counter_stage(o->state,b->native_action,b->motion,b->phase,
++                                             b->animation_frame,o->rank==3);
++    }else if(s->move==W_GROUND&&s->source==109&&o->rank==3&&o->drawn){
++        unsigned cancel=s->red_foresight_chain?50:62;
++        counter_stage=b->animation_frame>=cancel?3:b->animation_frame+4>=cancel?1:0;
++    }else if(s->source==917&&o->drawn&&b->animation_frame<W_ROUND_SHEATHE_FRAME){
++        counter_stage=b->animation_frame>=55?3:b->animation_frame>=51?1:0;
++    }else if(s->move==W_RELEASE&&s->source==904&&o->drawn&&b->animation_frame<W_RELEASE_SHEATHE_FRAME){
++        /* The last hit ends at 94. Offer only the late, still-drawn recovery. */
++        counter_stage=b->animation_frame>=130?3:b->animation_frame>=126?1:0;
++    }else if(s->move==W_LAND&&s->source==174){
++        counter_stage=w_foresight_stage(174,b->animation_frame,event);
++    }else if(s->move==W_CHARGE&&s->source==908){
++        float elapsed=b->animation_frame-w_charge_start_frame(s);
++        if(elapsed>=16&&elapsed<50)counter_stage=elapsed>=20?3:1;
++    }
++    unsigned counter_keys=ML_R|ML_A;
++    if(!counter_stage||!o->grounded||o->hunter_art_input||(b->held&~counter_keys)||
++       s->counter_action!=b->native_action||s->counter_motion!=b->motion||
++       s->counter_generation!=b->bind_generation)s->counter_pending=0;
++    s->counter_action=b->native_action;s->counter_motion=b->motion;
++    s->counter_generation=b->bind_generation;
++    if(o->grounded&&!o->hunter_art_input&&counter_stage&&
++       w_fresh_counter(s->finisher_sheathe_keys,b->held))
++        s->counter_pending=1;
++    if(s->counter_pending){
++        s->finisher_sheathe_keys=b->held;
++        if(counter_stage&2)return enter(s,o,W_FORESIGHT,counter_keys);
++        return (WDecision){0};
++    }
 +    unsigned owner=sakura_cut?0x703:finisher?(s->move?0x10000u|s->source:b->motion):0;
 +    unsigned previous_keys=s->finisher_sheathe_keys,previous_owner=s->finisher_sheathe_owner;
 +    unsigned fresh_sheathe=b->held==(ML_R|ML_B)&&previous_keys!=(ML_R|ML_B);
@@ -2422,7 +2535,7 @@ index 47cb139..cd310b8 100644
      if(s->move==W_CHIJIN&&s->source!=906&&s->source!=907&&b->animation_frame<=8){
          if(b->held==(ML_R|ML_X)&&!s->spirit_crimson_repeat)
              return enter(s,o,W_THRUST,b->held);
-@@ -240,6 +340,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -240,6 +374,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      unsigned spirit_one=!s->move&&w_spirit_one_crimson_source(o->state,b->native_action,b->motion);
      unsigned native_spirit=!s->move&&w_native_spirit_one(o->state,b->native_action);
      unsigned prep=native_spirit&&!spirit_one;
@@ -2431,7 +2544,7 @@ index 47cb139..cd310b8 100644
      unsigned red_native=!s->move&&o->rank==3&&o->grounded&&o->state==16&&
          (spirit_one||prep||w_valor_chord(o->state,b->native_action,b->motion,100000.f,ML_X,0)==W_CHIJIN);
      unsigned previous=s->spirit_crimson_held;
-@@ -254,14 +356,15 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -254,14 +390,15 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
          s->spirit_crimson_motion=b->motion;
          if((b->held&~(ML_R|ML_X))||(!(spirit_one||prep)&&(b->held&ML_R)))
              s->spirit_crimson_pending=0;
@@ -2449,7 +2562,7 @@ index 47cb139..cd310b8 100644
                  w_valor_chord(o->state,b->native_action,b->motion,b->animation_frame,ML_X,0)==W_CHIJIN;
              if(!ready||(!carried&&s->spirit_crimson_confirm>0))return (WDecision){0};
              WObservation next=*o;
-@@ -283,7 +386,17 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -283,7 +420,17 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      if(!s->move&&s->wilds_charge_link&&(o->state==1||o->state==2)&&b->native_action<=5&&
         b->held==ML_R&&o->grounded)return wilds_bridge(s,o,1);
      if(o->valor&&!s->move){
@@ -2468,7 +2581,7 @@ index 47cb139..cd310b8 100644
          if(!o->grounded||!o->valor_move)return (WDecision){0};
          if(o->valor_move==W_FOCUS||o->valor_move==W_SLIDE||o->valor_move==W_CHIJIN)return w_wilds_enter(s,o,o->valor_move);
          return enter(s,o,o->valor_move,b->held);
-@@ -307,7 +420,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -307,7 +454,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
  #endif
      unsigned idle=!s->move&&(o->state==1||o->state==2)&&b->native_action<=5&&o->grounded;
      unsigned air_spirit=!s->move&&o->state==16&&
@@ -2478,7 +2591,7 @@ index 47cb139..cd310b8 100644
            (b->motion==0x598||b->motion==0x568))||
           (b->native_action>=72&&b->native_action<=75&&
            ((b->motion>=0x599&&b->motion<=0x59c)||b->motion==0x568)));
-@@ -336,7 +450,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -336,7 +484,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
       * their ordinary ground-combo chord timers before starting Iai. */
      WDecision iai=w_iai_press(s,o);
      if(iai.kind!=W_KEEP)return iai;
@@ -2487,7 +2600,7 @@ index 47cb139..cd310b8 100644
      const float direction[4]={(float)b->input_heading,0,0,0};
      int delta=ml_heading_delta(b->input_heading,b->heading);
      /* Recorded GU input: positive quarter-turn is the hunter's left.
-@@ -345,12 +459,50 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -345,12 +493,50 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      unsigned facing=delta>=8192&&delta<=24576?3:
          delta<=-8192&&delta>=-24576?1:delta>24576||delta< -24576?2:0;
      if(s->input_motion!=b->motion){w_controls_bind(&s->controls);s->input_motion=b->motion;s->gu_chord_wait=0;}
@@ -2538,7 +2651,7 @@ index 47cb139..cd310b8 100644
      if(!s->move)world_guild_chords(s,b->held,permission);
      else s->gu_chord_wait=0;
      float frame=b->animation_frame;
-@@ -360,7 +512,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -360,7 +546,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      }
      if(s->move==W_SHEATHE){
  #if ML_WILDS_MOVES
@@ -2547,7 +2660,7 @@ index 47cb139..cd310b8 100644
              WDecision d=w_leave(s);d.kind=W_ROLL;d.sheathed_roll=1;
              d.heading=b->magnitude>=50?b->input_heading:b->heading;return d;
          }
-@@ -427,12 +579,12 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -427,12 +613,12 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      unsigned node=s->move==W_GROUND?s->ground_node:world_source_node(source);
      if(node==0xffff||!o->grounded)return (WDecision){0};
      if(s->move==W_FORESIGHT){
@@ -2563,7 +2676,7 @@ index 47cb139..cd310b8 100644
          }
      }
      WGroundQuery query={.s=s,.o=o};
-@@ -445,7 +597,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -445,7 +631,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
          WDecision d=world_route(s,o,(unsigned)next);
          if(d.kind!=W_KEEP)return d;
      }
@@ -2573,7 +2686,7 @@ index 47cb139..cd310b8 100644
          WDecision d=w_leave(s);d.kind=W_ROLL;
          d.heading=b->magnitude>=50?b->input_heading:b->heading;return d;
 diff --git a/integration/c/world_core.c b/integration/c/world_core.c
-index b781341..1be4a46 100644
+index b781341..70e1ab0 100644
 --- a/integration/c/world_core.c
 +++ b/integration/c/world_core.c
 @@ -94,10 +94,10 @@ unsigned w_source(unsigned motion)
@@ -2707,7 +2820,7 @@ index b781341..1be4a46 100644
 +        {101,50,70},{102,51,70},{103,56,76},{104,36,56},
 +        {105,18,38},{106,24,44},{107,22,42},{110,38,58},
 +        {112,18,38},{307,24,45},
-+        {920,16,38},{901,20,50},{921,60,90},{918,50,80},
++        {920,16,38},{901,20,50},{921,60,90},
 +        {903,28,56},{910,28,56},{911,28,56},{912,35,60},
 +        {922,28,62},{923,52,72},{924,52,72},{925,60,80},
 +        {930,39,69}
@@ -2718,7 +2831,7 @@ index b781341..1be4a46 100644
 +    if(source==108||source==902)return (frame>=50&&frame<55)||frame>=110?3:frame>=35?1:0;
 +    if(source==906)return frame>=53||(frame>=29&&frame<40)?3:frame>=27?1:0;
 +    if(source==907)return frame>=69||(frame>=28&&frame<38)||(frame>=47&&frame<57)?3:frame>=38?1:0;
-+    if(source==140)return 0;
++    if(source==140||source==918)return 0;
 +#else
 +    (void)frame;
 +#endif
@@ -2772,7 +2885,15 @@ index b781341..1be4a46 100644
  }
  static void spirit_round_reward(WDecision *d,unsigned rank)
  {
-@@ -355,6 +479,13 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
+@@ -340,6 +464,7 @@ WDecision w_leave(WState *s)
+     if(s->helm_cost_pending&&s->rank)d.rank_delta-=1;
+     s->helm_cost_pending=0;s->red_foresight_chain=0;s->wilds_charge_link=0;
+     s->spirit_crimson_pending=s->spirit_crimson_repeat=0;
++    s->counter_pending=0;
+     s->move=s->bound=s->queued=0;s->source=s->slot=0;s->ground_node=s->main_source=0;return d;
+ }
+ /* Free movement turns into the stick. Focus holds a camera-relative
+@@ -355,6 +480,13 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
      *heading=b->heading;
      *direction=0;
      if(b->magnitude<50)return W_CRIMSON_STATIONARY;
@@ -2786,7 +2907,7 @@ index b781341..1be4a46 100644
      unsigned reference=directional_facing(o,b->input_heading);
      int angle=ml_heading_delta(b->input_heading,reference);
      *heading=b->input_heading;
-@@ -371,15 +502,17 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
+@@ -371,15 +503,17 @@ static unsigned crimson_one(const WObservation *o,unsigned *heading,unsigned *di
  
  static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned mask)
  {
@@ -2805,7 +2926,7 @@ index b781341..1be4a46 100644
  #if ML_WILDS_MOVES
      if(move==W_FORESIGHT&&o->rank==3)s->source=918;
      s->valor_foresight=o->valor&&s->source==918;
-@@ -387,14 +520,16 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -387,14 +521,16 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
      if(move==W_CHIJIN)s->source=crimson_one(o,&crimson_heading,&d.crimson_direction);
  #endif
      s->wilds_helm_red=(move>=W_RISE&&move<=W_LAND)?helm_red:0;
@@ -2826,7 +2947,7 @@ index b781341..1be4a46 100644
      s->wilds_previous=o->base.held;s->wilds_sample=o->base.sample_sequence;
      s->slot=w_clip(s->source)->slot;s->bound=0;s->last_frame=0;
      s->counter_success=s->hit_success=s->rank_paid=s->follow_ready=0;
-@@ -416,7 +551,7 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -416,7 +552,7 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
      }
  #if ML_WILDS_MOVES
      if(move==W_CHIJIN)s->heading=crimson_heading;
@@ -2835,7 +2956,7 @@ index b781341..1be4a46 100644
  #endif
      d.source=s->source;d.slot=s->slot;d.heading=s->heading;
  #if ML_WILDS_MOVES
-@@ -433,8 +568,19 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -433,8 +569,19 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
          const WMotionLink *link=w_motion_link(d.source,previous,W_BANK_W03_00,o->base.animation_frame);
          if(link){d.motion_contract=1;d.start=s->entry_start=link->start;d.blend=link->blend;d.speed=link->speed;}
      }
@@ -2856,7 +2977,7 @@ index b781341..1be4a46 100644
  #if ML_WILDS_MOVES
          if(o->rank==3){s->foresight_gauge=1;d.gauge_clear=0;}
  #endif
-@@ -444,26 +590,33 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+@@ -444,26 +591,33 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
      return d;
  }
  WDecision w_debug_enter(WState *s,const WObservation *o,unsigned move){return enter(s,o,move,0);}
@@ -2895,7 +3016,7 @@ index b781341..1be4a46 100644
      }
  #else
      (void)s;(void)o;
-@@ -476,11 +629,43 @@ unsigned w_red_draw(const WObservation *o)
+@@ -476,11 +630,43 @@ unsigned w_red_draw(const WObservation *o)
          (o->state==1||o->state==2)&&o->base.native_action<=5;
  }
  #if ML_WILDS_MOVES
@@ -2942,7 +3063,7 @@ index b781341..1be4a46 100644
  }
  #endif
  WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move)
-@@ -496,10 +681,12 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move)
+@@ -496,10 +682,12 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move)
      if(move==W_CHIJIN&&o->rank!=3)return (WDecision){0};
      if(move==W_RELEASE&&(s->move!=W_LAND||!s->wilds_helm_red||
         o->rank<1+s->helm_cost_pending))return (WDecision){0};
@@ -2958,7 +3079,7 @@ index b781341..1be4a46 100644
      return d;
  }
  
-@@ -587,23 +774,39 @@ void w_input_finish(WState *s,const WObservation *o,WDecision d)
+@@ -587,23 +775,40 @@ void w_input_finish(WState *s,const WObservation *o,WDecision d)
  {
  #if ML_WORLD_INPUT_VM
      const WEvent *event=0;unsigned source=0;
@@ -2987,6 +3108,7 @@ index b781341..1be4a46 100644
 +{
 +    s->keys=(WKeys){0};s->controls=(WControls){0};s->gu_chord_wait=0;
 +    s->fade_step_pending=0;
++    s->counter_pending=0;
 +    s->queued=s->consumed=0;s->air_sheathe_buffer=0;
 +    s->finisher_sheathe_pending=0;
 +    s->wilds_r_pending=s->wilds_r_direction=s->wilds_direction_pending=0;
@@ -3001,7 +3123,7 @@ index b781341..1be4a46 100644
  WDecision w_step(WState *s,const WObservation *o)
  {
      WDecision d={0};const MLObservation *b=&o->base;
-@@ -614,7 +817,9 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -614,7 +819,9 @@ WDecision w_step(WState *s,const WObservation *o)
           * the previous actor's pending move. Held transition keys stay spent. */
          if(s->actor==b->actor&&s->actor)d=w_leave(s);
          w_reset(s);s->actor=b->actor;s->epoch=b->epoch;
@@ -3012,7 +3134,7 @@ index b781341..1be4a46 100644
      }
  #if ML_WILDS_MOVES && ML_WORLD_INPUT_VM
      if(!o->drawn){
-@@ -626,7 +831,20 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -626,7 +833,21 @@ WDecision w_step(WState *s,const WObservation *o)
  #if ML_WILDS_MOVES
      sheathing|=(s->source==917&&b->animation_frame>=W_ROUND_SHEATHE_FRAME)||(s->source==904&&b->animation_frame>=W_RELEASE_SHEATHE_FRAME);
  #endif
@@ -3021,6 +3143,7 @@ index b781341..1be4a46 100644
 +    if(!s->move) sheathing=w_native_finisher_cancel(o->state,b->native_action,b->motion)!=0||
 +        w_sakura_final_cut(o->state,b->native_action,b->motion);
 +#endif
++    if(!o->grounded||!o->alive||!o->resources_ready||(!o->drawn&&!sheathing))s->counter_pending=0;
 +    if(!o->alive||(!o->drawn&&!sheathing)||!o->resources_ready){
 +        s->finisher_sheathe_keys=b->held;
 +        s->finisher_sheathe_pending=0;
@@ -3034,7 +3157,7 @@ index b781341..1be4a46 100644
      w_keys_tick(&s->keys,b);
      if(s->move&&!w_private(o->state,b->native_action)){d=combine(d,w_leave(s));d.kind=W_ABORT;return d;}
      unsigned new_sample=s->sample!=b->sample_sequence;
-@@ -637,7 +855,14 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -637,7 +858,14 @@ WDecision w_step(WState *s,const WObservation *o)
      if(!(frame>=0&&frame<100000)){if(!s->move)return d;d=combine(d,w_leave(s));d.kind=W_ABORT;return d;}
      if(s->move){
          if(b->native_action!=w_action(s->move)){d=combine(d,w_leave(s));d.kind=W_ABORT;return d;}
@@ -3050,7 +3173,7 @@ index b781341..1be4a46 100644
          s->bound=1;
          if(o->counter)s->counter_success=1;
          if(o->contact&&!s->hit_success){
-@@ -651,7 +876,7 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -651,7 +879,7 @@ WDecision w_step(WState *s,const WObservation *o)
          }
          if(s->move==W_BIG&&frame>=37&&!s->rank_paid){
  #if ML_WILDS_MOVES
@@ -3059,7 +3182,7 @@ index b781341..1be4a46 100644
                  s->rank_paid=1;
                  if(o->rank<3){d.rank_delta+=1;if(o->rank==2)d.gauge_fill=1;}
              }
-@@ -675,6 +900,17 @@ WDecision w_step(WState *s,const WObservation *o)
+@@ -675,6 +903,17 @@ WDecision w_step(WState *s,const WObservation *o)
          s->rank_paid=1;spirit_round_reward(&d,o->rank);
      }
  #if ML_WORLD_INPUT_VM
@@ -3078,7 +3201,7 @@ index b781341..1be4a46 100644
  #endif
      if(s->move==W_GROUND&&s->main_source&&
 diff --git a/integration/c/world_core.h b/integration/c/world_core.h
-index 033f8ef..36b3a79 100644
+index 033f8ef..fb81048 100644
 --- a/integration/c/world_core.h
 +++ b/integration/c/world_core.h
 @@ -20,11 +20,35 @@ static inline unsigned w_focus_finisher_end(unsigned source)
@@ -3138,11 +3261,12 @@ index 033f8ef..36b3a79 100644
      unsigned motion_contract,crimson_direction,sheathed_roll;
      unsigned valor_slide,valor_slide_heading,valor_slide_input;
      float start,blend,speed;
-@@ -53,26 +77,30 @@ typedef struct {
+@@ -53,26 +77,31 @@ typedef struct {
      unsigned input_motion,gu_chord_wait;
      unsigned air_sheathe_sample,air_sheathe_held;
      float air_sheathe_buffer;
 +    unsigned finisher_sheathe_owner,finisher_sheathe_keys,finisher_sheathe_pending;
++    unsigned counter_pending,counter_action,counter_generation,counter_motion;
      unsigned bound,consumed,queued,queued_mask,queued_source,foresight_gauge;
      unsigned queued_word,queued_shift,queued_heading;
      unsigned counter_success,hit_success,rank_paid,follow_ready;
@@ -3172,7 +3296,7 @@ index 033f8ef..36b3a79 100644
      unsigned red_foresight_chain,valor_foresight;
      unsigned wilds_direction_pending,wilds_direction_heading,wilds_direction_input;
      float wilds_direction_age;
-@@ -82,15 +110,45 @@ typedef struct {
+@@ -82,15 +111,45 @@ typedef struct {
      float turn_age,turn_duration,turn_fraction;
      float queue_until,hold_seconds,last_frame,helm_cost_seconds,solo_age;
  } WState;
@@ -3210,18 +3334,18 @@ index 033f8ef..36b3a79 100644
 +    return stage==4?.10f:W_CHARGE_HOLD_SECONDS;
 +}
 +static inline float w_charge_start_frame(const WState *s)
- {
--    return s->wilds_stage==3?1.3f:1.f;
++{
 +    /* Spirit I and II skip the already completed part of MOT279. */
 +    return s->wilds_stage==3?W_CHARGE_THREE_FRAME:s->wilds_stage==2?W_CHARGE_TWO_FRAME:0.f;
 +}
 +static inline float w_charge_playback_rate(void)
-+{
+ {
+-    return s->wilds_stage==3?1.3f:1.f;
 +    return W_CHARGE_READY_FRAME/(60.f*W_CHARGE_READY_SECONDS);
  }
  #endif
  const WClip *w_clip(unsigned source);
-@@ -98,10 +156,29 @@ const WEvent *w_event(unsigned source,float frame);
+@@ -98,10 +157,50 @@ const WEvent *w_event(unsigned source,float frame);
  enum {W_FLOAT_SPEED,W_FLOAT_TURN,W_FLOAT_CAMERA};
  float w_float(unsigned source,unsigned channel,float frame);
  unsigned w_source(unsigned motion);
@@ -3234,6 +3358,27 @@ index 033f8ef..36b3a79 100644
 +static inline unsigned w_native_round(unsigned state,unsigned action,unsigned motion)
 +{
 +    return state==16&&motion==0x57f&&(action==30||action==31||action==106);
++}
++/* Recovery only. GU 1.4 dispatch 11998b0: Moon I-III bind MOT7056 in
++ * phase 2 after their swing. Juncture stance 58-60 switches to action
++ * 61 / MOT7102 on a counter. Use the late tail of that 121-frame clip. */
++static inline unsigned w_native_counter_stage(unsigned state,unsigned action,unsigned motion,
++                                              unsigned phase,float frame,unsigned red)
++{
++    if(state!=16)return 0;
++    if(action==62&&motion==0x703)return frame>=1?3:0;
++    if(action>=55&&action<=57&&phase==2&&motion==0x738)return frame>=113?3:0;
++    if(action==61&&phase==1&&motion==0x766)return frame>=102?3:0;
++    unsigned cancel=0;
++    if((action==GU_DRAWN_ICHIMONJI||action==GU_ICHIMONJI)&&motion==0x5b9)cancel=90;
++    if((action==GU_RECKONING||action==88||action==117)&&motion==0x5ba)cancel=110;
++    if(red&&w_native_round(state,action,motion)&&action!=31&&frame< W_ROUND_SHORT_SHEATHE)cancel=62;
++    return !cancel?0:frame>=cancel?3:frame+4>=cancel?1:0;
++}
++static inline unsigned w_fresh_counter(unsigned previous,unsigned held)
++{
++    const unsigned chord=ML_R|ML_A;
++    return held==chord&&(chord&~previous)&&!(previous&~chord);
 +}
 +unsigned w_native_finisher_cancel(unsigned state,unsigned action,unsigned motion);
 +static inline unsigned w_sakura_final_cut(unsigned state,unsigned action,unsigned motion)
@@ -3252,7 +3397,7 @@ index 033f8ef..36b3a79 100644
  /* GU's weak Spirit I remains available. Later paid links use these
   * thresholds both when the controller decides and when GU replays a tap. */
  static inline unsigned w_spirit_link_cost(unsigned action)
-@@ -117,10 +194,13 @@ static inline unsigned w_spirit_charge_source(unsigned source)
+@@ -117,10 +216,13 @@ static inline unsigned w_spirit_charge_source(unsigned source)
  {
      return source==104||source==106||source==108||source==110;
  }
@@ -3268,7 +3413,7 @@ index 033f8ef..36b3a79 100644
  }
  unsigned w_guild_attack(unsigned action);
  unsigned w_guild_source(unsigned state,unsigned action,unsigned motion);
-@@ -147,6 +227,9 @@ unsigned w_private(unsigned state,unsigned action);
+@@ -147,6 +249,9 @@ unsigned w_private(unsigned state,unsigned action);
  unsigned w_red_draw(const WObservation *o);
  #if ML_WILDS_MOVES
  unsigned w_sheathed_slide(const WObservation *o);
@@ -3278,7 +3423,7 @@ index 033f8ef..36b3a79 100644
  void w_reserve_spirit_crimson(WState *s,const MLObservation *input);
  #endif
  unsigned w_native_roll(unsigned state,unsigned action);
-@@ -155,6 +238,7 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move);
+@@ -155,6 +260,7 @@ WDecision w_wilds_enter(WState *s,const WObservation *o,unsigned move);
  WDecision w_iai_press(WState *s,const WObservation *o);
  unsigned w_iai_ready(const WState *s,const WObservation *o);
  WDecision w_debug_enter(WState *s,const WObservation *o,unsigned move);
@@ -4295,7 +4440,7 @@ index 6c2a894..158fb34 100644
  
  if __name__ == '__main__':
 diff --git a/wilds-port/tools/test_wilds_controller.c b/wilds-port/tools/test_wilds_controller.c
-index 4fda88b..d555b0d 100644
+index 4fda88b..686cd9f 100644
 --- a/wilds-port/tools/test_wilds_controller.c
 +++ b/wilds-port/tools/test_wilds_controller.c
 @@ -1,12 +1,36 @@
@@ -4374,7 +4519,7 @@ index 4fda88b..d555b0d 100644
    {W_FOCUS,914},{W_FOCUS,927},{W_FOCUS,928},{W_FOCUS,929},{W_FORESIGHT,918}
   };
   for(unsigned i=0;i<sizeof(strikes)/sizeof(*strikes);i++){
-@@ -51,7 +90,13 @@ static void valor_routes(void)
+@@ -51,7 +90,15 @@ static void valor_routes(void)
     unsigned partner=k?ML_A:ML_X;
     WObservation o=obs();o.valor=1;
     WState s={.move=strikes[i][0],.source=strikes[i][1],.wilds_previous=r_first?ML_R:partner};
@@ -4385,11 +4530,13 @@ index 4fda88b..d555b0d 100644
 +    frame=0;
 +    while(!(w_weapon_chord_stage(s.source,frame,0,move)&2))++frame;
 +   }
-+   WDecision d=tick(&s,&o,ML_R|partner,frame);
++   o.base.held=ML_R|partner;o.base.animation_frame=frame;o.base.sample_sequence++;
++   WDecision d=world_command_step(&s,&o,s.source,w_event(s.source,frame));
++   if(k&&strikes[i][1]==918){assert(d.move!=W_FORESIGHT);continue;}
     assert(d.move==(k?W_FORESIGHT:W_THRUST));
    }
   }
-@@ -61,7 +106,7 @@ static void valor_routes(void)
+@@ -61,7 +108,7 @@ static void valor_routes(void)
    assert(wilds_spirit(&s,&o).native_action==(blue?116:23));
    s=(WState){.move=W_FOCUS,.source=914};
    assert(wilds_spirit(&s,&o).native_action==(blue?117:26));
@@ -4398,7 +4545,7 @@ index 4fda88b..d555b0d 100644
    assert(tick(&s,&o,0,1).kind==W_KEEP);
    assert(tick(&s,&o,ML_R,29).kind==W_KEEP);
    assert(tick(&s,&o,ML_R,30).native_action==(blue?116:23));
-@@ -71,8 +116,8 @@ static void valor_routes(void)
+@@ -71,8 +118,8 @@ static void valor_routes(void)
  static void red_x_recovery(void)
  {
   const unsigned native[][3]={
@@ -4409,7 +4556,7 @@ index 4fda88b..d555b0d 100644
   };
   for(unsigned i=0;i<sizeof(native)/sizeof(*native);i++){
    for(unsigned overlap=0;overlap<=(i<2);overlap++){
-@@ -80,6 +125,8 @@ static void red_x_recovery(void)
+@@ -80,6 +127,8 @@ static void red_x_recovery(void)
     WState s={.spirit_crimson_held=overlap?ML_R:0};
     o.base.native_action=native[i][0];o.base.motion=0x500+native[i][1];
     o.base.held=overlap?(ML_R|ML_X):ML_X;o.base.animation_frame=3;
@@ -4418,7 +4565,7 @@ index 4fda88b..d555b0d 100644
     assert(world_command_step(&s,&o,0,NULL).kind==W_KEEP);
     o.base.held=0;o.base.animation_frame=native[i][2]-1;
     o.base.simulation_delta=5;o.base.sample_sequence++;
-@@ -105,14 +152,14 @@ static void red_x_recovery(void)
+@@ -105,14 +154,14 @@ static void red_x_recovery(void)
   reserve.base.held=0;reserve.base.motion=0x568;
   reserve.base.animation_frame=56;reserve.base.sample_sequence++;
   assert(world_command_step(&buffered,&reserve,0,NULL).source==W_CRIMSON_STATIONARY);
@@ -4438,7 +4585,7 @@ index 4fda88b..d555b0d 100644
    assert(tick(&s,&o,0,frame-1).kind==W_KEEP);
    assert(tick(&s,&o,0,frame).source==W_CRIMSON_STATIONARY);
   }
-@@ -130,7 +177,8 @@ static void directional_spirit(void)
+@@ -130,7 +179,8 @@ static void directional_spirit(void)
   WObservation o=obs();WState s={0};
   o.drawn=0;o.state=2;o.base.native_action=2;o.base.magnitude=100;
   o.base.held=ML_R;
@@ -4448,7 +4595,7 @@ index 4fda88b..d555b0d 100644
   o.base.held=ML_R|ML_X|ML_A;
   assert(w_sheathed_slide(&o)&&w_wilds_enter(&s,&o,W_SLIDE).move==W_SLIDE);
   o.base.magnitude=0;
-@@ -145,8 +193,9 @@ static void directional_spirit(void)
+@@ -145,8 +195,9 @@ static void directional_spirit(void)
    s=(WState){.move=W_CHARGE,.source=902,.wilds_stage=3};
    assert(tick(&s,&o,ML_R,95).kind==W_KEEP);
    o.base.simulation_delta=6;
@@ -4460,7 +4607,7 @@ index 4fda88b..d555b0d 100644
   }
  }
  
-@@ -186,14 +235,121 @@ static void charge_routes(void)
+@@ -186,14 +237,121 @@ static void charge_routes(void)
    assert(tick(&s,&o,ML_R,frame-1).kind==W_KEEP);
    o.base.simulation_delta=2;
    WDecision d=tick(&s,&o,ML_R,frame);
@@ -4583,7 +4730,7 @@ index 4fda88b..d555b0d 100644
  static void iai_held_entry(void)
  {
   WState s={0};WObservation o=obs();o.base.held=ML_R;
-@@ -222,14 +378,763 @@ static void short_spirit_costs(void)
+@@ -222,14 +380,898 @@ static void short_spirit_costs(void)
    assert(!s.wilds_r_pending);
   }
  }
@@ -5306,7 +5453,142 @@ index 4fda88b..d555b0d 100644
 +    puts("PASS: forward RT after all three fades, all four spirit ranks; Helm motion takeover and first bind");
 +}
 +
++typedef struct {
++    unsigned move,source,action,motion,phase,pre,execute;
++} CounterRoute;
++
++static WDecision counter_sample(WState *s,WObservation *o,unsigned held,float frame)
++{
++    WDecision d=frame_step(s,o,held,frame);
++    w_input_finish(s,o,d);
++    return d;
++}
++
++static void counter_setup(WState *s,WObservation *o,CounterRoute route)
++{
++    *o=obs();o->rank=3;
++    *s=(WState){.actor=o->base.actor,.epoch=o->base.epoch,.move=route.move,.source=route.source};
++    w_keys_tick(&s->keys,&o->base);
++    o->base.phase=route.phase;
++    o->base.native_action=route.action;o->base.motion=route.motion;
++    if(route.move){
++        s->slot=w_clip(route.source)->slot;
++        o->base.native_action=w_action(route.move);o->base.motion=0x500+s->slot;
++        s->red_foresight_chain=route.source==109;s->ground_node=route.source==109?5:0;
++    }
++}
++
++static void counter_recovery_routes(void)
++{
++    const unsigned chord=ML_R|ML_A;
++    const CounterRoute routes[]={
++        {0,0,62,0x703,1,1,1},
++        {0,0,55,0x738,2,113,113},{0,0,56,0x738,2,113,113},{0,0,57,0x738,2,113,113},
++        {0,0,61,0x766,1,102,102},{0,0,85,0x5b9,2,86,90},{0,0,67,0x5ba,2,106,110},
++        {0,0,30,0x57f,1,58,62},{W_GROUND,109,0,0,0,46,50},{W_CHARGE,917,0,0,0,51,55},
++        {W_CHARGE,908,0,0,0,16,20},{W_LAND,174,0,0,0,60,80},
++        {W_SLIDE,923,0,0,0,52,72},{W_CHIJIN,906,0,0,0,27,29},{W_CHARGE,930,0,0,0,39,69},
++        {W_RELEASE,904,0,0,0,126,130}
++    };
++    for(unsigned i=0;i<sizeof(routes)/sizeof(*routes);++i){
++        CounterRoute r=routes[i];
++        for(unsigned late=0;late<2;++late)for(unsigned first=0;first<2;++first)for(unsigned gap=0;gap<=4;++gap){
++            WState s;WObservation o;counter_setup(&s,&o,r);o.base.magnitude=100;
++            unsigned start=r.pre>=4?r.pre-4:0,press=start+gap;
++            if(press<r.pre)press=r.pre;
++            if(late){start=r.execute;press=start+gap;}
++            if(r.source==908){ /* the charge already owns a held RT */
++                if(first||gap>r.pre)continue;
++                s.wilds_previous=ML_R;
++            }
++            for(unsigned f=start;f<=r.execute+4;++f){
++                unsigned keys=f==press?chord:
++                    f<press&&(f+gap>=press||r.source==908)?(first?ML_A:ML_R):0;
++                WDecision d=counter_sample(&s,&o,keys,f);
++                unsigned expected=press>r.execute?press:r.execute;
++                if(f==expected){
++                    if(d.move!=W_FORESIGHT)fprintf(stderr,"route %u order %u gap %u at %u: got %u/%u\n",i,first,gap,f,d.kind,d.move);
++                    assert(d.move==W_FORESIGHT&&d.source==918);break;
++                }
++                if(d.kind!=W_KEEP)fprintf(stderr,"early route %u first %u gap %u f %u kind %u move %u\n",i,first,gap,f,d.kind,d.move);
++                assert(d.kind==W_KEEP);
++            }
++        }
++    }
++    WState s;WObservation o;
++    for(unsigned i=0;i<5;++i){ /* Complete the chord early and hold it across the boundary. */
++        CounterRoute r=routes[i];counter_setup(&s,&o,r);
++        for(unsigned f=r.pre-1;f<=r.execute+3;++f)assert(counter_sample(&s,&o,chord,f).move!=W_FORESIGHT);
++        counter_sample(&s,&o,0,r.execute+4);
++        assert(counter_sample(&s,&o,chord,r.execute+5).move==W_FORESIGHT);
++    }
++    for(unsigned action=58;action<=60;++action)assert(!w_native_counter_stage(16,action,0x766,1,119,1));
++    assert(!w_native_counter_stage(16,55,0x733,1,130,1));
++    assert(!w_native_counter_stage(16,62,0x702,1,130,1));
++    assert(!w_native_counter_stage(16,31,0x57f,1,75,1));
++    for(unsigned rank=0;rank<4;++rank){
++        counter_setup(&s,&o,routes[4]);o.rank=rank;o.base.gauge=0;
++        WDecision d=counter_sample(&s,&o,chord,108);
++        assert(d.move==W_FORESIGHT&&d.source==(rank==3?918:140)&&s.foresight_gauge==(rank==3));
++    }
++    const unsigned conflicts[]={ML_X|ML_R,ML_B|ML_R,ML_Y,ML_ZR,ML_X|ML_A|ML_R,ML_A,ML_R};
++    for(unsigned i=0;i<sizeof(conflicts)/sizeof(*conflicts);++i){
++        counter_setup(&s,&o,routes[4]);
++        assert(counter_sample(&s,&o,conflicts[i],110).move!=W_FORESIGHT);
++    }
++    for(unsigned i=0;i<4;++i){
++        counter_setup(&s,&o,routes[5]);
++        assert(counter_sample(&s,&o,chord,86).kind==W_KEEP);
++        if(i==0)o.base.bind_generation++;
++        if(i==1)o.grounded=0;
++        if(i==2)o.hunter_art_input=1;
++        unsigned keys=i==3?ML_X:0;
++        assert(counter_sample(&s,&o,keys,88).move!=W_FORESIGHT);
++        o.grounded=1;o.hunter_art_input=0;
++        assert(counter_sample(&s,&o,0,90).move!=W_FORESIGHT);
++    }
++    for(unsigned source=140;source<=918;source+=778){
++        CounterRoute self={W_FORESIGHT,source,0,0,0,0,0};
++        for(unsigned f=0;f<150;++f){
++            counter_setup(&s,&o,self);
++            assert(counter_sample(&s,&o,chord,f).move!=W_FORESIGHT);
++        }
++    }
++    counter_setup(&s,&o,routes[5]);counter_sample(&s,&o,chord,86);
++    o.base.simulation_delta=0;
++    for(unsigned n=0;n<30;++n)assert(counter_sample(&s,&o,0,86).kind==W_KEEP);
++    o.base.simulation_delta=1;
++    assert(counter_sample(&s,&o,0,90).move==W_FORESIGHT);
++    /* A lone B after moving Spirit II remains its native thrust exactly once. */
++    counter_setup(&s,&o,routes[12]);
++    assert(counter_sample(&s,&o,ML_A,74).kind==W_KEEP);
++    unsigned native=0;
++    for(unsigned f=75;f<85;++f){
++        WDecision d=counter_sample(&s,&o,0,f);
++        if(d.kind==W_NATIVE){++native;break;}
++    }
++    assert(native==1);
++    /* Yuzu's physical RT and B (Switch ZR and A) arrive before native RB synthesis. */
++    unsigned spent=0,physical=YUZU_PAD_ZR|0x2000;
++    unsigned packet=yuzu_weapon_input(yuzu_combat_pad(physical,physical,1,0),&spent);
++    assert((packet&(YUZU_PAD_R|0x2000))==(YUZU_PAD_R|0x2000));
++    assert(!(yuzu_combat_pad(YUZU_PAD_R|0x2000,YUZU_PAD_R|0x2000,1,0)&YUZU_PAD_R));
++    assert(!w_fresh_counter(ML_R|ML_A,ML_R|ML_A));
++    assert(!w_fresh_counter(ML_R|ML_B,ML_R|ML_A));
++    /* Moving from LT+face or a three-button chord must not leave a counter. */
++    for(unsigned i=0;i<2;++i){
++        counter_setup(&s,&o,routes[4]);o.hunter_art_input=i;
++        counter_sample(&s,&o,chord|(i?0:ML_X),105);
++        o.hunter_art_input=0;
++        assert(counter_sample(&s,&o,0,106).move!=W_FORESIGHT);
++    }
++    counter_setup(&s,&o,routes[1]);o.state=1;o.base.native_action=2;o.base.motion=0x501;
++    assert(counter_sample(&s,&o,chord,120).move!=W_FORESIGHT);
++    puts("PASS: recovery-only Arts, both chord orders, rebind/interrupt, hitstop, solo and conflicting inputs");
++}
++
 +int main(int argc,char **argv){
++ if(argc==2&&!strcmp(argv[1],"counter")){counter_recovery_routes();return 0;}
 + directional_fade_step_and_helm_interrupt();
 + if(argc==2&&!strcmp(argv[1],"adept-run")){adept_iai_run_route();return 0;}
 + if(argc==2&&!strcmp(argv[1],"sprint")){sprint_and_weapon_packets();return 0;}
@@ -5348,7 +5630,7 @@ index 4fda88b..d555b0d 100644
   WObservation o=obs();WState s={0};WDecision d;
   assert(w_wilds_enter(&s,&o,W_RELEASE).kind==W_KEEP);
   s.move=W_LAND;s.wilds_helm_red=0;assert(w_wilds_enter(&s,&o,W_RELEASE).kind==W_KEEP);
-@@ -276,7 +1181,7 @@ int main(void){
+@@ -276,7 +1318,7 @@ int main(void){
   o.base.gauge=10;assert(w_wilds_enter(&s,&o,W_SLIDE).gauge_delta==-10);
   for(unsigned stage=2;stage<=4;stage++){
    o=obs();o.base.held=ML_R;w_reset(&s);wilds_charge(&s,&o,stage);
@@ -5357,7 +5639,7 @@ index 4fda88b..d555b0d 100644
    assert(stage==2?(d.kind==W_NATIVE&&d.native_action==23):d.source==(stage==3?902:917));
   }
   o=obs();w_reset(&s);w_wilds_enter(&s,&o,W_SLIDE);
-@@ -351,9 +1256,9 @@ int main(void){
+@@ -351,9 +1393,9 @@ int main(void){
   for(unsigned rank=0;rank<4;rank++){
    o=obs();o.rank=rank;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
    s.actor=1;s.epoch=1;o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);o.base.animation_frame=37;o.counter=1;
@@ -5369,7 +5651,7 @@ index 4fda88b..d555b0d 100644
    o.base.sample_sequence++;assert(!w_step(&s,&o).red_recovery);
    o=obs();o.rank=rank;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
    assert(w_leave(&s).rank_delta==0);
-@@ -380,25 +1285,18 @@ int main(void){
+@@ -380,25 +1422,18 @@ int main(void){
    if(i<2)assert(d.kind==W_KEEP);
   }
   assert(d.kind==W_ENTER&&d.move==W_CHARGE&&s.wilds_stage==2);
@@ -5400,7 +5682,7 @@ index 4fda88b..d555b0d 100644
   for(unsigned large=0;large<2;large++){
    o=obs();w_reset(&s);s.actor=1;s.epoch=1;
    d=w_debug_enter(&s,&o,W_SHEATHE);
-@@ -424,8 +1322,15 @@ int main(void){
+@@ -424,8 +1459,15 @@ int main(void){
   s.actor=1;s.epoch=1;o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);
   o.contact=o.counter=1;assert(!w_step(&s,&o).gauge_fill);
   o.rank=2;w_reset(&s);d=w_debug_enter(&s,&o,W_FORESIGHT);assert(d.source==140&&d.gauge_clear);
@@ -5417,7 +5699,7 @@ index 4fda88b..d555b0d 100644
   o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);
   d=w_step(&s,&o);assert(d.source==W_CRIMSON_STATIONARY&&d.rank_delta==1&&d.gauge_fill&&s.rank==3);
   o=obs();o.rank=1;o.base.gauge=0;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
-@@ -474,6 +1379,7 @@ int main(void){
+@@ -474,6 +1516,7 @@ int main(void){
   o.base.sample_sequence++;assert(!w_step(&s,&o).rank_delta);
  
   puts("PASS: chains, holds, chords, sheath recovery, Iai, red draw, five Spirit I branches, red Foresight");
