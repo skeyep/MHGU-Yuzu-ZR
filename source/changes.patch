@@ -4510,7 +4510,7 @@ index 6c2a894..158fb34 100644
  
  if __name__ == '__main__':
 diff --git a/wilds-port/tools/test_wilds_controller.c b/wilds-port/tools/test_wilds_controller.c
-index 4fda88b..686cd9f 100644
+index 4fda88b..3e6ae7f 100644
 --- a/wilds-port/tools/test_wilds_controller.c
 +++ b/wilds-port/tools/test_wilds_controller.c
 @@ -1,12 +1,36 @@
@@ -4677,7 +4677,7 @@ index 4fda88b..686cd9f 100644
   }
  }
  
-@@ -186,14 +237,121 @@ static void charge_routes(void)
+@@ -186,14 +237,132 @@ static void charge_routes(void)
    assert(tick(&s,&o,ML_R,frame-1).kind==W_KEEP);
    o.base.simulation_delta=2;
    WDecision d=tick(&s,&o,ML_R,frame);
@@ -4699,8 +4699,12 @@ index 4fda88b..686cd9f 100644
 + for(unsigned i=0;i<20;i++){o.base.sample_sequence++;wilds_bridge(&s,&o,1);}
 + for(unsigned i=0;i<8;i++){o.base.sample_sequence++;wilds_bridge(&s,&o,0);}
 + o.base.animation_frame=62;
-+ for(unsigned i=0;i<9;i++){o.base.sample_sequence++;d=wilds_bridge(&s,&o,104);}
-+ assert(d.source==908&&s.wilds_stage==2);
++ /* The engine changes actions on the first transition. */
++ for(unsigned i=0;i<9;i++){
++  o.base.sample_sequence++;d=wilds_bridge(&s,&o,104);
++  if(d.kind!=W_KEEP)break;
++ }
++ assert(d.kind==W_ENTER&&d.source==908&&s.wilds_stage==2);
 +
 + o=obs();o.base.held=ML_R;w_reset(&s);wilds_charge(&s,&o,4);
 + o.base.magnitude=100;
@@ -4756,7 +4760,7 @@ index 4fda88b..686cd9f 100644
 +        ++o.base.sample_sequence;
 +        assert(w_step(&s,&o).move==W_SHEATHE);
 +    }
-+    const unsigned imported[]={917,904,312};
++    const unsigned imported[]={917,917,904,312};
 +    for(unsigned i=0;i<sizeof(imported)/sizeof(*imported);++i){
 +        WState s={.actor=1,.epoch=1};
 +        WObservation o=obs();
@@ -4764,8 +4768,9 @@ index 4fda88b..686cd9f 100644
 +        s.move=source==917?W_CHARGE:source==904?W_RELEASE:W_SHEATHE_END;
 +        s.source=source;s.slot=w_clip(source)->slot;
 +        o.base.native_action=w_action(s.move);o.base.motion=0x500+s.slot;
-+        o.base.animation_frame=source==917?84:w_private_finisher_cancel(source);
-+        o.drawn=0;o.base.held=ML_R|ML_B;
++        o.base.animation_frame=source==917?(i==0?84:W_ROUND_SHEATHE_FRAME):w_private_finisher_cancel(source);
++        /* Only the early Roundslash case still has the blade drawn. */
++        o.drawn=i==0;o.base.held=ML_R|ML_B;
 +        assert(w_step(&s,&o).move==W_SHEATHE);
 +    }
 +    WState s={.actor=1,.epoch=1};
@@ -4784,7 +4789,7 @@ index 4fda88b..686cd9f 100644
 +    o=obs();s=(WState){.actor=1,.epoch=1};
 +    wilds_round(&s,&o);
 +    o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);
-+    o.drawn=0;o.base.held=ML_R;o.base.animation_frame=96;++o.base.sample_sequence;
++    o.drawn=1;o.base.held=ML_R;o.base.animation_frame=96;++o.base.sample_sequence;
 +    assert(w_step(&s,&o).source==W_CRIMSON_SPIN);
 +    o=obs();s=(WState){.actor=1,.epoch=1,.finisher_sheathe_keys=ML_R};
 +    o.base.native_action=31;o.base.motion=0x57f;o.base.held=ML_R;
@@ -4793,14 +4798,20 @@ index 4fda88b..686cd9f 100644
 +    o.base.held=0;++o.base.sample_sequence;
 +    assert(w_step(&s,&o).kind==W_KEEP);
 +    o.base.held=ML_R;++o.base.sample_sequence;
++    assert(w_step(&s,&o).kind==W_KEEP);
++    for(unsigned frame=91;frame<97;frame++){
++        o.base.animation_frame=frame;++o.base.sample_sequence;
++        assert(w_step(&s,&o).kind==W_KEEP);
++    }
++    o.base.animation_frame=97;++o.base.sample_sequence;
 +    assert(w_step(&s,&o).source==W_CRIMSON_SPIN);
-+    puts("PASS: 7 native and 3 imported sheathing paths, solo A, native and imported late RT");
++    puts("PASS: 7 native and 4 imported sheathing cases, solo A, native and imported late RT");
 +}
 +
  static void iai_held_entry(void)
  {
   WState s={0};WObservation o=obs();o.base.held=ML_R;
-@@ -222,14 +380,898 @@ static void short_spirit_costs(void)
+@@ -222,14 +391,903 @@ static void short_spirit_costs(void)
    assert(!s.wilds_r_pending);
   }
  }
@@ -5202,7 +5213,10 @@ index 4fda88b..686cd9f 100644
 + o.counter=o.contact=0;
 + assert(frame_step(&s,&o,ML_R,40).kind==W_KEEP);
 + o.base.simulation_delta=7;
-+ d=frame_step(&s,&o,0,47);
++ assert(frame_step(&s,&o,0,47).kind==W_KEEP);
++ o.base.simulation_delta=1;
++ assert(frame_step(&s,&o,ML_R,70).kind==W_KEEP);
++ d=frame_step(&s,&o,0,71);
 + assert(d.kind==W_NATIVE&&d.native_action==26);
 + o.base.native_action=26;o.base.motion=0x56c;o.base.simulation_delta=1;
 + assert(frame_step(&s,&o,ML_R,95).kind==W_KEEP);
@@ -5212,7 +5226,9 @@ index 4fda88b..686cd9f 100644
 + assert(frame_step(&s,&o,ML_R,12).kind==W_KEEP);
 + assert(frame_step(&s,&o,ML_R,50).kind==W_KEEP);
 + assert(frame_step(&s,&o,0,53).kind==W_KEEP);
-+ d=frame_step(&s,&o,ML_R,54);
++ assert(frame_step(&s,&o,ML_R,54).kind==W_KEEP);
++ assert(frame_step(&s,&o,0,55).kind==W_KEEP);
++ d=frame_step(&s,&o,0,56);
 + assert(d.kind==W_ENTER&&d.source==W_CRIMSON_SPIN);
 +
 + for(unsigned rank=2;rank<=3;rank++){
@@ -5700,7 +5716,23 @@ index 4fda88b..686cd9f 100644
   WObservation o=obs();WState s={0};WDecision d;
   assert(w_wilds_enter(&s,&o,W_RELEASE).kind==W_KEEP);
   s.move=W_LAND;s.wilds_helm_red=0;assert(w_wilds_enter(&s,&o,W_RELEASE).kind==W_KEEP);
-@@ -276,7 +1318,7 @@ int main(void){
+@@ -238,9 +1296,12 @@ int main(void){
+  s.move=W_LAND;s.wilds_helm_red=1;s.helm_cost_pending=0;o.rank=2;
+  d=w_wilds_enter(&s,&o,W_RELEASE);assert(d.kind==W_ENTER&&d.rank_delta==-1);
+  o=obs();w_reset(&s);w_wilds_enter(&s,&o,W_CHIJIN);
+- assert(tick(&s,&o,ML_X,44).source==906);tick(&s,&o,0,1);
+- assert(tick(&s,&o,ML_X,53).source==907);tick(&s,&o,0,1);
+- assert(tick(&s,&o,ML_X,77).source==W_CRIMSON_STATIONARY);
++ assert(tick(&s,&o,ML_X,44).kind==W_KEEP);
++ assert(tick(&s,&o,0,46).source==906);tick(&s,&o,0,1);
++ assert(tick(&s,&o,ML_X,53).kind==W_KEEP);
++ assert(tick(&s,&o,0,57).source==907);tick(&s,&o,0,1);
++ assert(tick(&s,&o,ML_X,77).kind==W_KEEP);
++ assert(tick(&s,&o,0,96).source==W_CRIMSON_STATIONARY);
+  o=obs();w_reset(&s);o.state=1;o.drawn=0;o.base.gauge=0;
+  o.rank=2;assert(w_wilds_enter(&s,&o,W_CHIJIN).kind==W_KEEP);
+  o.rank=3;o.grounded=0;assert(w_wilds_enter(&s,&o,W_CHIJIN).kind==W_KEEP);
+@@ -276,7 +1337,7 @@ int main(void){
   o.base.gauge=10;assert(w_wilds_enter(&s,&o,W_SLIDE).gauge_delta==-10);
   for(unsigned stage=2;stage<=4;stage++){
    o=obs();o.base.held=ML_R;w_reset(&s);wilds_charge(&s,&o,stage);
@@ -5709,7 +5741,38 @@ index 4fda88b..686cd9f 100644
    assert(stage==2?(d.kind==W_NATIVE&&d.native_action==23):d.source==(stage==3?902:917));
   }
   o=obs();w_reset(&s);w_wilds_enter(&s,&o,W_SLIDE);
-@@ -351,9 +1393,9 @@ int main(void){
+@@ -291,7 +1352,7 @@ int main(void){
+   assert(tick(&s,&o,ML_R,53).kind==W_KEEP);
+   o.base.simulation_delta=7;o.base.magnitude=0;
+   d=tick(&s,&o,0,59);
+-  assert(d.kind==W_MOTION&&d.source==W_SPIRIT_TWO_FORWARD+(focus?direction:0)&&d.gauge_delta==-15);
++  assert(d.kind==W_MOTION&&d.source==W_SPIRIT_TWO_FORWARD+direction&&d.gauge_delta==-15);
+   assert(tick(&s,&o,ML_R,76).kind==W_KEEP);
+   d=tick(&s,&o,0,81);
+   assert(d.kind==W_NATIVE&&d.native_action==26);
+@@ -333,7 +1394,7 @@ int main(void){
+  assert(wilds_bridge(&s,&o,1).move==W_SHEATHE);
+  o=obs();w_reset(&s);o.base.magnitude=100;o.base.input_heading=16384;o.base.held=ML_R;
+  for(int i=0;i<8;i++){o.base.sample_sequence++;d=wilds_bridge(&s,&o,1);if(d.kind!=W_KEEP)break;}
+- assert(d.move==W_SLIDE&&d.source==903&&d.heading==16384);
++ assert(d.move==W_SLIDE&&d.source==911&&d.heading==0);
+  for(int i=0;i<40;i++)d=tick(&s,&o,ML_R,30);
+  d=tick(&s,&o,ML_R,56);assert(d.move==W_CHARGE&&s.wilds_stage==2);
+  o=obs();w_reset(&s);s.move=W_LAND;s.wilds_helm_red=1;s.rank=2;o.rank=2;
+@@ -341,33 +1402,31 @@ int main(void){
+  d=w_wilds_enter(&s,&o,W_RELEASE);assert(d.heading==1234);
+  o=obs();w_reset(&s);wilds_round(&s,&o);wilds_phase(&s,&o,917);
+  o.base.magnitude=100;
+- assert(tick(&s,&o,0,wilds_clip(917)->frames-2).kind==W_KEEP);
+- assert(tick(&s,&o,0,wilds_clip(917)->frames-1).kind==W_IDLE);
++ assert(tick(&s,&o,0,W_ROUND_FRAMES-2).kind==W_KEEP);
++ assert(tick(&s,&o,0,W_ROUND_FRAMES-1).kind==W_IDLE);
+  /* A closed weapon during the authored recovery is not an interruption. */
+  o=obs();w_reset(&s);wilds_round(&s,&o);wilds_phase(&s,&o,917);
+  s.actor=1;s.epoch=1;o.drawn=0;o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);o.base.animation_frame=W_ROUND_SHEATHE_FRAME;
+  d=w_step(&s,&o);assert(d.kind==W_KEEP&&s.source==917);
+- o.base.animation_frame=wilds_clip(917)->frames-1;o.base.sample_sequence++;assert(w_step(&s,&o).kind==W_IDLE);
++ o.base.animation_frame=W_ROUND_FRAMES-1;o.base.sample_sequence++;assert(w_step(&s,&o).kind==W_IDLE);
   for(unsigned rank=0;rank<4;rank++){
    o=obs();o.rank=rank;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
    s.actor=1;s.epoch=1;o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);o.base.animation_frame=37;o.counter=1;
@@ -5721,7 +5784,26 @@ index 4fda88b..686cd9f 100644
    o.base.sample_sequence++;assert(!w_step(&s,&o).red_recovery);
    o=obs();o.rank=rank;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
    assert(w_leave(&s).rank_delta==0);
-@@ -380,25 +1422,18 @@ int main(void){
+  }
+  for(unsigned button=0;button<3;button++){
+   o=obs();w_reset(&s);w_debug_enter(&s,&o,W_BIG);s.counter_success=1;s.consumed=0;
+-  o.base.animation_frame=40;o.base.held=button==0?ML_R|ML_B:button==1?ML_X:ML_R;
++  unsigned keys=button==0?ML_R|ML_B:button==1?ML_X:ML_R;
++  o.base.animation_frame=button==2?70:50;o.base.held=keys;
+   o.base.sample_sequence++;
+-  d=world_command_step(&s,&o,s.source,w_event(s.source,40));
+-  if(button==2){
+-   assert(d.kind==W_KEEP);
+-   o.base.sample_sequence++;o.base.simulation_delta=7;o.base.held=0;
+-   d=world_command_step(&s,&o,s.source,w_event(s.source,47));
+-  }
++  assert(world_command_step(&s,&o,s.source,w_event(s.source,o.base.animation_frame)).kind==W_KEEP);
++  o.base.animation_frame=button==2?71:70;o.base.held=0;o.base.sample_sequence++;
++  d=world_command_step(&s,&o,s.source,w_event(s.source,o.base.animation_frame));
+   assert(button==0?d.move==W_SHEATHE:button==1?d.source==W_CRIMSON_STATIONARY:d.kind==W_NATIVE&&d.native_action==26);
+  }
+  o=obs();w_reset(&s);w_debug_enter(&s,&o,W_BIG);
+@@ -380,25 +1439,21 @@ int main(void){
    if(i<2)assert(d.kind==W_KEEP);
   }
   assert(d.kind==W_ENTER&&d.move==W_CHARGE&&s.wilds_stage==2);
@@ -5737,7 +5819,11 @@ index 4fda88b..686cd9f 100644
 -  d=tick(&s,&o,ML_R|ML_B,i==0?49:i==1?50:0);
 +  d=tick(&s,&o,ML_R|ML_B,i==0?99:i==1?100:50);
    if(i==0||i==2||i==3)assert(d.move==W_SHEATHE);
-   else if(i==4)assert(d.kind==W_ROLL);
+-  else if(i==4)assert(d.kind==W_ROLL);
++  else if(i==4){
++   assert(d.kind==W_KEEP);
++   assert(tick(&s,&o,0,70).move==W_SHEATHE);
++  }
    else assert(d.kind==W_KEEP);
   }
 - o=obs();w_reset(&s);s.actor=1;s.epoch=1;
@@ -5752,7 +5838,7 @@ index 4fda88b..686cd9f 100644
   for(unsigned large=0;large<2;large++){
    o=obs();w_reset(&s);s.actor=1;s.epoch=1;
    d=w_debug_enter(&s,&o,W_SHEATHE);
-@@ -424,8 +1459,15 @@ int main(void){
+@@ -424,28 +1479,43 @@ int main(void){
   s.actor=1;s.epoch=1;o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);
   o.contact=o.counter=1;assert(!w_step(&s,&o).gauge_fill);
   o.rank=2;w_reset(&s);d=w_debug_enter(&s,&o,W_FORESIGHT);assert(d.source==140&&d.gauge_clear);
@@ -5767,13 +5853,52 @@ index 4fda88b..686cd9f 100644
 - s.actor=1;s.epoch=1;o.counter=1;o.base.held=ML_X;o.base.animation_frame=37;
 + s.actor=1;s.epoch=1;o.counter=o.contact=1;o.base.held=ML_X;o.base.animation_frame=37;
   o.base.motion=0x500+s.slot;o.base.native_action=w_action(s.move);
-  d=w_step(&s,&o);assert(d.source==W_CRIMSON_STATIONARY&&d.rank_delta==1&&d.gauge_fill&&s.rank==3);
+- d=w_step(&s,&o);assert(d.source==W_CRIMSON_STATIONARY&&d.rank_delta==1&&d.gauge_fill&&s.rank==3);
++ d=w_step(&s,&o);assert(d.kind==W_KEEP&&d.rank_delta==1&&d.gauge_fill);
++ o.rank+=d.rank_delta;o.base.gauge=100;
++ assert(frame_step(&s,&o,0,49).kind==W_KEEP);
++ assert(frame_step(&s,&o,ML_X,50).kind==W_KEEP);
++ d=frame_step(&s,&o,0,70);assert(d.source==W_CRIMSON_STATIONARY&&!d.rank_delta&&s.rank==3);
   o=obs();o.rank=1;o.base.gauge=0;w_reset(&s);w_debug_enter(&s,&o,W_BIG);
-@@ -474,6 +1516,7 @@ int main(void){
+- s.counter_success=1;o.base.held=ML_R;o.base.animation_frame=40;
++ s.counter_success=1;o.base.held=ML_R;o.base.animation_frame=70;
+  o.base.sample_sequence++;
+- assert(world_command_step(&s,&o,s.source,w_event(s.source,40)).kind==W_KEEP);
++ assert(world_command_step(&s,&o,s.source,w_event(s.source,70)).kind==W_KEEP);
+  o.base.sample_sequence++;o.base.simulation_delta=7;o.base.held=0;
+- d=world_command_step(&s,&o,s.source,w_event(s.source,47));assert(d.kind==W_NATIVE&&d.native_action==27);
+- for(unsigned leading=ML_R;leading<=ML_B;leading+=ML_B-ML_R){
++ o.base.animation_frame=77;d=world_command_step(&s,&o,s.source,w_event(s.source,77));assert(d.kind==W_NATIVE&&d.native_action==27);
++ const unsigned lead_keys[]={ML_R,ML_B};
++ for(unsigned i=0;i<2;i++){
++  unsigned leading=lead_keys[i];
+   o=obs();w_reset(&s);w_debug_enter(&s,&o,W_BIG);s.counter_success=1;
+-  o.base.held=leading;o.base.sample_sequence++;o.base.animation_frame=39;
+-  assert(world_command_step(&s,&o,s.source,w_event(s.source,39)).kind==W_KEEP);
+-  o.base.held=ML_R|ML_B;o.base.sample_sequence++;o.base.animation_frame=42;o.base.simulation_delta=3;
+-  assert(world_command_step(&s,&o,s.source,w_event(s.source,42)).move==W_SHEATHE);
++  o.base.held=leading;o.base.sample_sequence++;o.base.animation_frame=69;
++  assert(world_command_step(&s,&o,s.source,w_event(s.source,69)).kind==W_KEEP);
++  o.base.held=ML_R|ML_B;o.base.sample_sequence++;o.base.animation_frame=72;o.base.simulation_delta=3;
++  assert(world_command_step(&s,&o,s.source,w_event(s.source,72)).move==W_SHEATHE);
+  }
+  o=obs();w_reset(&s);w_debug_enter(&s,&o,W_SMALL);
+  o.base.held=ML_X;o.base.sample_sequence++;o.base.animation_frame=33;
+  assert(world_command_step(&s,&o,307,w_event(307,33)).kind==W_KEEP);
+  o.base.held=0;o.base.sample_sequence++;o.base.animation_frame=42;o.base.simulation_delta=9;
+- assert(world_command_step(&s,&o,307,w_event(307,42)).source==W_CRIMSON_STATIONARY);
++ assert(world_command_step(&s,&o,307,w_event(307,42)).kind==W_KEEP);
++ o.base.animation_frame=45;o.base.sample_sequence++;
++ assert(world_command_step(&s,&o,307,w_event(307,45)).source==W_CRIMSON_STATIONARY);
+  o=obs();w_reset(&s);w_wilds_enter(&s,&o,W_CHIJIN);
+  o.focus_strike=1;o.base.held=ML_R|ML_Y;o.base.animation_frame=38;o.base.sample_sequence++;
+  assert(world_command_step(&s,&o,W_CRIMSON_STATIONARY,w_event(W_CRIMSON_STATIONARY,38)).kind==W_KEEP);
+@@ -474,6 +1544,8 @@ int main(void){
   o.base.sample_sequence++;assert(!w_step(&s,&o).rank_delta);
  
   puts("PASS: chains, holds, chords, sheath recovery, Iai, red draw, five Spirit I branches, red Foresight");
 + puts("PASS: Hunter Art chord priority and release order, buffered Crimson cancel, Iai to red Roundslash spin");
++ return 0;
  }
  
  
