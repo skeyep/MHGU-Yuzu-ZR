@@ -88,7 +88,7 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 勇气风格收刀移动时按住 **RB** 跑步，按 **RT** 气刃拔刀。入蓝后，**Y** 接原生普通斩，**RT** 接刚气刃。地面攻击收势时按 **X** 可进入勇气纳刀，小居合从第 24 帧起可预输入，最早第 42 帧接上。
 
-勇气槽上限为 1,000 点。见切、小居合或大居合成功迎击并命中时，入蓝前基础增加 90 点，入蓝后基础回复 18 点。原生加槽技能的倍率仍然生效。其他原本升刃的奖励也计入勇气槽。蓝刃登龙升空消耗 30 点，下劈再耗 25 点，完整一套共 55 点。气刃无双斩终结消耗 35 点。蓝刃登龙沿用红刃伤害档，落地按普通登龙收势。
+勇气槽上限为 1,000 点。见切、小居合或大居合成功迎击并命中时，入蓝前基础增加 90 点，入蓝后基础回复 18 点。GU 会按太刀状态和技能倍率结算并取整，蓝中一次反击可能只回 3 点。其他原本升刃的奖励也计入勇气槽。蓝刃登龙升空消耗 30 点，下劈再耗 25 点，完整一套共 55 点。气刃无双斩终结消耗 35 点。蓝刃登龙沿用红刃伤害档，落地按普通登龙收势。
 
 武士道大居合 GP 成功后按 **Y** 进入拖刀，拖刀减速时自动出一文字斩。拖刀中松开再按 **Y** 可在原生窗口提前出刀，气刃足够时再按 **RT** 接气刃无双斩，收势按 **RT＋A** 特殊纳刀。原生精准回避后的 Y 也能进入同一条路线。
 
@@ -114,7 +114,7 @@ v1.2.14 扩展大回旋的刀身判定，修正红刃拔刀和特殊纳刀误翻
 
 In Valor Style, hold **RB** and move to sprint with the sword sheathed. Press **RT** for a Spirit draw. In blue Valor mode, **Y** follows the native slash combo and **RT** continues the native Valor Spirit Blade chain. Press **X** during a grounded attack’s recovery for Valor Sheathe. After Iai Slash, X can be buffered from frame 24 and the stance can start at frame 42.
 
-The Valor Gauge holds 1,000 points. A successful Foresight Slash, Iai Slash or Iai Spirit Slash counter must land its cut to add 90 base points before blue mode or restore 18 during blue mode. Native gauge-gain skill multipliers apply. Other Spirit-level rewards also build or refill the Valor Gauge. In blue mode, Helm Breaker costs 30 points on ascent and 25 on descent, for a total of 55. The Spirit Reckoning finisher costs 35 points. Blue Helm Breaker uses red-tier damage and the standard landing recovery.
+The Valor Gauge holds 1,000 points. A successful Foresight Slash, Iai Slash or Iai Spirit Slash counter must land its cut to add 90 base points before blue mode or 18 base points in blue mode. GU applies weapon-state and skill modifiers and rounds down. A blue-mode counter can restore as little as 3 points. Other Spirit-level rewards also build or refill the Valor Gauge. In blue mode, Helm Breaker costs 30 points on ascent and 25 on descent, for a total of 55. The Spirit Reckoning finisher costs 35 points. Blue Helm Breaker uses red-tier damage and the standard landing recovery.
 
 After a successful Adept Iai Spirit Slash, press Y to dash. The dash now links into Ichimonji as it slows. Press Y again during the dash for an earlier cut. At red Spirit level, Spirit Thrust now starts at frame zero and plays at 1.25× speed from either Iai slash, red Foresight Slash or Spirit Roundslash.
 
