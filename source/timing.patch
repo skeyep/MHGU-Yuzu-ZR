@@ -1,0 +1,164 @@
+diff --git a/integration/c/gu_adapter.c b/integration/c/gu_adapter.c
+index 8975514..60706cf 100644
+--- a/integration/c/gu_adapter.c
++++ b/integration/c/gu_adapter.c
+@@ -679,7 +679,17 @@ static uptr __attribute__((pcs("aapcs-vfp"))) layer_hook(void *a,u32 layer,u32 m
+        start==W_ROUND_SHEATHE_FRAME&&shortened_round(a,0x500+127))
+         start=W_ROUND_SHORT_SHEATHE;
+ #endif
++#if ML_WILDS_MOVES && ML_WORLD_COMBAT
++    /* Record the outgoing dash clock at the actual main-layer handoff. */
++    unsigned adept_cut=!layer&&motion==5185&&u16(a,STATE)==16&&
++        u16(a,ACTION)==GU_DRAWN_ICHIMONJI&&u16(a,MOTION)==GU_ADEPT_DRAWN_RUN_MOTION&&local_supported(a);
++    unsigned dash_frame=adept_cut?(unsigned)real(a,FRAME):0;
++#endif
+     uptr result=original_layer(a,layer,motion,flags,blend,start,speed);
++#if ML_WILDS_MOVES && ML_WORLD_COMBAT
++    if(adept_cut&&u16(a,MOTION)==0x5b9)
++        log_event("adept_ichimonji_bound",(u32)(uptr)a,dash_frame,(u32)start,(u32)blend);
++#endif
+     if(layer==0&&motion!=0xffffu&&local_supported(a)){
+         if(bind_actor!=a){bind_actor=a;bind_generation=0;}
+         ++bind_generation;
+diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
+index 72e6488..a7487de 100644
+--- a/integration/c/world_adapter.inc
++++ b/integration/c/world_adapter.inc
+@@ -62,7 +62,18 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+             if(adept_run.actor&&adept_run.pad==(int)slot){
+                 if(!supported||hunter!=adept_run.actor||byte(hunter,AREA)!=adept_run.epoch||
+                    u16(hunter,STATE)!=1||u16(hunter,ACTION)!=GU_ADEPT_RUN)adept_run.actor=0;
+-                else mapping_bits=yuzu_adept_run_input(&adept_run.input,mapping_bits);
++                else{
++                    mapping_bits=yuzu_adept_run_input(&adept_run.input,mapping_bits);
++                    /* Deliver the automatic cut through the native dash input as
++                     * soon as the body brakes, including between weapon updates. */
++                    if(adept_run.input.waiting&&(bits&~YUZU_PAD_X&0xff00u)==0&&
++                       (byte(hunter,DRAWN)&1)&&!(word(hunter,AIR)&0x400)&&real(hunter,0x1c)>0&&
++                       w_adept_run_end(1,GU_ADEPT_RUN,u16(hunter,MOTION),real(hunter,FRAME),0)){
++                        adept_run.input.waiting=0;
++                        mapping_bits|=YUZU_PAD_X;
++                        log_event("adept_run_cut_input",(u32)(uptr)hunter,GU_ADEPT_RUN,u16(hunter,MOTION),(unsigned)real(hunter,FRAME));
++                    }
++                }
+             }
+             yuzu_trigger_sample(&world_rt[slot],bits);
+             world_rb[slot]=(bits&0xffffu)==YUZU_PAD_R;
+@@ -2076,8 +2087,8 @@ static unsigned world_update(void *a,const MLObservation *b)
+         if(art||world.move||state!=1||action!=GU_ADEPT_RUN||adept_run.epoch!=byte(a,AREA)||
+            (int16_t)u16(a,HP)<=0||!(byte(a,DRAWN)&1)||(word(a,AIR)&0x400)){
+             adept_run.actor=0;
+-        }else if(b->simulation_delta>0&&w_adept_run_end(state,action,b->motion,b->motion_finished)){
+-            /* Run the drawn finisher before GU's completed dash returns to idle. */
++        }else if(b->simulation_delta>0&&w_adept_run_end(state,action,b->motion,b->animation_frame,b->motion_finished)){
++            /* Take the drawn finisher as the dash decelerates into its recovery pose. */
+             adept_run.actor=0;
+             ++submitting;virtual_request(a,16,GU_DRAWN_ICHIMONJI,0);--submitting;
+             log_event("adept_run_end_cut",(u32)(uptr)a,action,b->motion,(unsigned)b->animation_frame);
+diff --git a/integration/c/world_core.c b/integration/c/world_core.c
+index 61208a2..e8589dd 100644
+--- a/integration/c/world_core.c
++++ b/integration/c/world_core.c
+@@ -571,11 +571,10 @@ static WDecision enter(WState *s,const WObservation *o,unsigned move,unsigned ma
+         if(link){d.motion_contract=1;d.start=s->entry_start=link->start;d.blend=link->blend;d.speed=link->speed;}
+     }
+ #if ML_WILDS_MOVES
+-    if(move==W_THRUST&&previous==918){
+-        /* Blend out of the retreat into the closest thrust wind-up pose.
+-         * The thrust still reaches its own contact window at F84. */
++    if(move==W_THRUST&&s->helm_fast){
++        /* Every red thrust blends into the same wind-up from frame zero. */
+         d.motion_contract=1;
+-        d.start=s->entry_start=20.f;
++        d.start=s->entry_start=0.f;
+         d.blend=10.f;
+         d.speed=1.f;
+     }
+@@ -731,6 +730,11 @@ static WDecision ground_enter(WState *s,const WObservation *o,unsigned node,unsi
+         node==64?W_SMALL:node==65?W_BIG:0;
+     if(special){
+         WDecision d=enter(s,o,special,mask);
++#if ML_WILDS_MOVES
++        /* Iai links may have an extra preparation clip plus a late start in
++         * the thrust. Keep the legal cancel, then use the common red clock. */
++        if(special==W_THRUST&&s->helm_fast)return d;
++#endif
+         if(prep){
+             s->main_source=s->source;
+             WDecision phase=ground_motion(s,prep,previous,o->base.animation_frame,W_ENTER);
+@@ -911,7 +915,7 @@ WDecision w_step(WState *s,const WObservation *o)
+         if(!s->move)return d;
+     }
+ #if ML_WILDS_MOVES
+-    if(d.rank_delta>0&&((s->move==W_CHARGE&&(source==917||source==W_CRIMSON_SPIN))||(s->move==W_GROUND&&source==109))){
++    if(d.rank_delta>0){
+         WObservation promoted=*o;
+         if(promoted.rank<3)promoted.rank+=d.rank_delta;
+         return combine(d,world_command_step(s,&promoted,source,e));
+diff --git a/integration/c/world_core.h b/integration/c/world_core.h
+index 10f7b55..404e044 100644
+--- a/integration/c/world_core.h
++++ b/integration/c/world_core.h
+@@ -28,11 +28,13 @@ static inline unsigned w_owns_update(unsigned move,unsigned kind)
+     return move||kind==W_ENTER||kind==W_NATIVE||kind==W_NATIVE_R||
+         kind==W_ROLL||kind==W_IDLE||kind==W_ADEPT_RUN;
+ }
+-enum { GU_ADEPT_DRAWN_RUN_MOTION=0x5b6 };
++/* MOT5182 starts braking at frame 62, after 91% of its forward travel. */
++enum { GU_ADEPT_DRAWN_RUN_MOTION=0x5b6, GU_ADEPT_RUN_CUT_FRAME=62 };
+ enum { GU_ADEPT_RUN=174,GU_ICHIMONJI=66,GU_DRAWN_ICHIMONJI=85,GU_RECKONING=67 };
+-static inline unsigned w_adept_run_end(unsigned state,unsigned action,unsigned motion,unsigned finished)
++static inline unsigned w_adept_run_end(unsigned state,unsigned action,unsigned motion,float frame,unsigned finished)
+ {
+-    return state==1&&action==GU_ADEPT_RUN&&motion==GU_ADEPT_DRAWN_RUN_MOTION&&finished;
++    return state==1&&action==GU_ADEPT_RUN&&motion==GU_ADEPT_DRAWN_RUN_MOTION&&
++           (frame>=GU_ADEPT_RUN_CUT_FRAME||finished);
+ }
+ enum { W_RED_ROUND=1,W_RED_IAI=2 };
+ /* Wilds 252 counter uses a capsule following the live hunter pose.
+diff --git a/wilds-port/tools/test_wilds_controller.c b/wilds-port/tools/test_wilds_controller.c
+index 686cd9f..b49aab8 100644
+--- a/wilds-port/tools/test_wilds_controller.c
++++ b/wilds-port/tools/test_wilds_controller.c
+@@ -686,8 +686,8 @@ static void charge_and_red_draw(void)
+  assert(tick(&s,&o,ML_R|ML_X,50).kind==W_KEEP);
+  assert(tick(&s,&o,0,79).kind==W_KEEP);
+  d=tick(&s,&o,0,80);
+- assert(d.move==W_THRUST&&d.start==20&&d.blend==10&&w_helm_rate(&s)==1.25f);
+- puts("PASS: Red Foresight queues Spirit Thrust through F80 and blends into the F20 wind-up");
++ assert(d.move==W_THRUST&&d.start==0&&d.blend==10&&w_helm_rate(&s)==1.25f);
++ puts("PASS: Red Foresight queues Spirit Thrust through F80 and starts the full thrust wind-up");
+ }
+ 
+ static void crimson_stationary_spirit(void)
+@@ -762,7 +762,7 @@ static void moon_foresight_and_helm(void)
+   d=frame_step(&s,&o,frame>=70&&frame<76?ML_R|ML_X:0,frame);
+   if(d.kind==W_ENTER)break;
+  }
+- assert(d.move==W_THRUST&&w_helm_rate(&s)==1.25f);
++ assert(d.move==W_THRUST&&d.source==170&&d.start==0&&!s.main_source&&w_helm_rate(&s)==1.25f);
+  puts("PASS: red Helm Breaker rate persists from thrust through landing; lower tiers and Valor blue stay at 1x");
+ }
+ 
+@@ -1014,15 +1014,15 @@ static void adept_iai_run_route(void)
+     }
+     for(unsigned hold=0;hold<=1;++hold){
+         YuzuAdeptRun once={1,YUZU_PAD_X};
+-        for(unsigned f=0;f<93;++f){
++        for(unsigned f=0;f<GU_ADEPT_RUN_CUT_FRAME;++f){
+             assert(!yuzu_adept_run_input(&once,hold?YUZU_PAD_X:0));
+-            assert(!w_adept_run_end(1,GU_ADEPT_RUN,0x5b6,0));
++            assert(!w_adept_run_end(1,GU_ADEPT_RUN,0x5b6,(float)f,0));
+         }
+-        assert(once.waiting&&w_adept_run_end(1,GU_ADEPT_RUN,0x5b6,1));
++        assert(once.waiting&&w_adept_run_end(1,GU_ADEPT_RUN,0x5b6,GU_ADEPT_RUN_CUT_FRAME,0));
+     }
+-    assert(!w_adept_run_end(16,GU_DRAWN_ICHIMONJI,0x5b6,1)); /* cut already accepted */
+-    assert(!w_adept_run_end(1,GU_ADEPT_RUN,0x5b9,1)); /* previous clip's end bit */
+-    assert(!w_adept_run_end(1,0,0x5b6,1)); /* interrupted */
++    assert(!w_adept_run_end(16,GU_DRAWN_ICHIMONJI,0x5b6,92,1)); /* cut already accepted */
++    assert(!w_adept_run_end(1,GU_ADEPT_RUN,0x5b9,92,1)); /* previous clip's end bit */
++    assert(!w_adept_run_end(1,0,0x5b6,92,1)); /* interrupted */
+     YuzuAdeptRun run={1,YUZU_PAD_X};
+     assert(yuzu_adept_run_input(&run,YUZU_PAD_X|YUZU_PAD_R)==YUZU_PAD_R&&run.waiting);
+     assert(!yuzu_adept_run_input(&run,0)&&run.waiting);
