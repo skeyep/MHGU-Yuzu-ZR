@@ -294,7 +294,7 @@ index 4f891d1..8d0ab93 100644
  #define WILDS_RELEASE_ROW 168u
  #define WILDS_RELEASE_SHAPE 16u
 diff --git a/integration/c/wilds_controller.inc b/integration/c/wilds_controller.inc
-index 06203ec..6e21c72 100644
+index 06203ec..355378d 100644
 --- a/integration/c/wilds_controller.inc
 +++ b/integration/c/wilds_controller.inc
 @@ -4,6 +4,7 @@ static WDecision wilds_phase(WState *s,const WObservation *o,unsigned source)
@@ -745,7 +745,7 @@ index 06203ec..6e21c72 100644
          s->wilds_r_pending=1;s->wilds_r_wait=.10f;
          wilds_spirit_direction(s,b);
          if(repeat_x){
-@@ -400,66 +526,65 @@ static WDecision wilds_step(WState *s,const WObservation *o)
+@@ -400,66 +526,71 @@ static WDecision wilds_step(WState *s,const WObservation *o)
          else if(s->wilds_r_pending&&(pressed&ML_X)&&s->spirit_crimson_pending!=W_SPIRIT_CRIMSON_NEXT)
              wilds_queue_spirit_crimson(s,W_SPIRIT_CRIMSON_NEXT,b->input_heading,b->magnitude);
      }
@@ -765,7 +765,13 @@ index 06203ec..6e21c72 100644
 +        if(s->queued){
 +            unsigned stage=w_weapon_chord_stage(s->source,frame,0,s->queued);
 +            if(!stage||(keys&~s->queued_mask))s->queued=0;
-+            else if(stage&2)return enter(s,o,s->queued,s->queued_mask);
++            else if(stage&2){
++                if(s->source==W_CRIMSON_SPIN&&s->queued==W_FORESIGHT&&o->rank!=3){
++                    s->queued=0;
++                    return (WDecision){0};
++                }
++                return enter(s,o,s->queued,s->queued_mask);
++            }
 +            else return (WDecision){0};
 +        }
      }
@@ -854,7 +860,7 @@ index 06203ec..6e21c72 100644
              if(o->rank!=3)return wilds_native(s,o,0);
              s->heading=s->crimson_buffer_heading;
              WDecision d=wilds_phase(s,o,s->crimson_buffer_source);
-@@ -479,7 +604,7 @@ static WDecision wilds_step(WState *s,const WObservation *o)
+@@ -479,7 +610,7 @@ static WDecision wilds_step(WState *s,const WObservation *o)
              return wilds_phase(s,o,next);
          }
      }
@@ -863,7 +869,7 @@ index 06203ec..6e21c72 100644
         !(s->move==W_FOCUS&&s->wilds_focus_break&&(s->source==905||s->source==913))){
          if(b->held&~ML_X)s->spirit_crimson_pending=0;
          else if(pressed&ML_X)wilds_queue_spirit_crimson(s,W_SPIRIT_CRIMSON_INPUT,b->input_heading,b->magnitude);
-@@ -490,24 +615,33 @@ static WDecision wilds_step(WState *s,const WObservation *o)
+@@ -490,24 +621,33 @@ static WDecision wilds_step(WState *s,const WObservation *o)
              return w_wilds_enter(s,&next,W_CHIJIN);
          }
      }
@@ -907,7 +913,7 @@ index 06203ec..6e21c72 100644
      return (WDecision){0};
  }
 diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
-index 938b648..18947ee 100644
+index 938b648..55b9986 100644
 --- a/integration/c/world_adapter.inc
 +++ b/integration/c/world_adapter.inc
 @@ -5,14 +5,13 @@ static unsigned wilds_focus_active;
@@ -1081,7 +1087,51 @@ index 938b648..18947ee 100644
  static struct {unsigned active,actor,epoch,motion,generation,action,flags,button,owner_action,owner_state;} world_r_gate;
  #include "world_hits.h"
  static unsigned world_bound,world_bound_actor,world_bound_action,world_last_sample;
-@@ -262,6 +282,7 @@ static int world_open_hit(void *a,unsigned slot,unsigned row,unsigned flags)
+@@ -183,6 +203,12 @@ static void world_spirit_hud(void *hud)
+     if(strength>0&&gauge<=100)ml_gauge_glow((gauge<<8)|(unsigned)(strength*255));
+ 
+ }
++static unsigned world_contact(void *);
++#if ML_WILDS_MOVES
++/* Reset only on a new thrust. A stale binding cannot extend this budget. */
++static float helm_guard_ticks;
++static unsigned helm_guard_actor,helm_guard_epoch;
++#endif
+ static void (*world_original_timers)(void *);
+ static void world_timers(void *a)
+ {
+@@ -192,13 +218,29 @@ static void world_timers(void *a)
+ #if ML_WILDS_MOVES
+     unsigned red=word(a,0x3330)==3&&local_supported(a)&&(int16_t)u16(a,HP)>0;
+     float aura=red?real(a,0x332c):0;
++    unsigned helm_guard=0;
++    if(red&&aura>0&&helm_guard_ticks>0&&helm_guard_actor==(u32)(uptr)a&&
++       helm_guard_epoch==byte(a,AREA)&&world.actor==(u32)(uptr)a&&
++       world.epoch==byte(a,AREA)&&u16(a,STATE)==16&&
++       u16(a,ACTION)==w_action(world.move)&&
++       (!world_bound||(world_bound_actor==(u32)(uptr)a&&u16(a,MOTION)==0x500+world.slot))){
++        helm_guard=(world.move==W_THRUST&&world_bound&&world_contact(a))||
++            (world.wilds_helm_red&&((world.move>=W_RISE&&world.move<=W_DOWN)||
++             (world.move==W_LAND&&world.helm_cost_pending)));
++    }
++    /* Let GU tick everything, but keep this one clock away from its expiry edge. */
++    if(helm_guard)*(float *)((uptr)a+0x332c)=RED_AURA_MAX;
+ #endif
+     world_original_timers(a);
+     /* Native119eef0 contains passive gauge decay and other independent timers.
+      * Source skips only that decay while either regeneration effect is active. */
+     if(own){put(a,0x2780,gauge);*(float *)((uptr)a+0x3328)=decay;}
+ #if ML_WILDS_MOVES
+-    if(red&&word(a,0x3330)==3&&red_aura_hold>0){
++    if(helm_guard&&word(a,0x3330)==3){
++        float elapsed=RED_AURA_MAX-real(a,0x332c);
++        if(elapsed>0)helm_guard_ticks-=elapsed;
++        *(float *)((uptr)a+0x332c)=aura;
++    }else if(red&&word(a,0x3330)==3&&red_aura_hold>0){
+         float elapsed=aura-real(a,0x332c);
+         if(elapsed>0){
+             float held=elapsed<red_aura_hold?elapsed:red_aura_hold;
+@@ -262,6 +304,7 @@ static int world_open_hit(void *a,unsigned slot,unsigned row,unsigned flags)
  static u32 (*world_original_damage)(void *);
  static u32 (*world_original_hp)(void *,int,void *,u32);
  static float world_armor;
@@ -1089,7 +1139,7 @@ index 938b648..18947ee 100644
  static unsigned world_damage_depth;
  static unsigned world_super_depth;
  #if ML_WILDS_MOVES
-@@ -299,8 +320,10 @@ static u32 world_hp(void *a,int damage,void *result,u32 flags)
+@@ -299,8 +342,10 @@ static u32 world_hp(void *a,int damage,void *result,u32 flags)
      int original=damage;unsigned before=u16(a,HP);
      /* Native2F0C9C receives a signed HP delta: its callers pass -damage.
       * Keep healing untouched and retain at least one point of real damage. */
@@ -1102,7 +1152,7 @@ index 938b648..18947ee 100644
      u32 value=world_original_hp(a,damage,result,flags);
      if(a==(void *)(uptr)world.actor&&original<0)
          log_event("world_hp_hit",(u32)(uptr)a,(u32)original,(u32)damage,(before<<16)|u16(a,HP));
-@@ -313,7 +336,7 @@ static u32 world_damage(void *a)
+@@ -313,7 +358,7 @@ static u32 world_damage(void *a)
      unsigned packet=byte(a,0x31e0),type=byte(a,0x3216);
      unsigned eligible=packet&&(int16_t)u16(a,0x321c)>=0&&world_counter_type(type);
      if(packet&&world.move)log_event("world_incoming",(u32)(uptr)a,world.source,(u32)real(a,FRAME),type|(eligible<<16));
@@ -1111,7 +1161,7 @@ index 938b648..18947ee 100644
  #if ML_WILDS_MOVES
      /* Keep Focus armor active across the two native motion rebinds. */
      unsigned action_armor=eligible&&world.move==W_FOCUS&&world.wilds_focus_break&&
-@@ -329,7 +352,8 @@ static u32 world_damage(void *a)
+@@ -329,7 +374,8 @@ static u32 world_damage(void *a)
          unsigned startup=!world_bound&&(action==w_action(world.move)||
              (action==w_action(W_SHEATHE)&&motion==0x500+w_clip(306)->slot));
          if(startup||(bound&&world_detectors[0].remaining>0)){
@@ -1121,7 +1171,7 @@ index 938b648..18947ee 100644
              *(unsigned char *)((uptr)a+0x31e0)=0;
              *(uint16_t *)((uptr)a+0x3226)=0;
              log_event("wilds_iai_guard",world.actor,world.source,startup,type);
-@@ -345,7 +369,8 @@ static u32 world_damage(void *a)
+@@ -345,7 +391,8 @@ static u32 world_damage(void *a)
  #if ML_WILDS_MOVES
          /* Wilds run-up window on the retained World thrust animation. */
          if(world.move==W_THRUST&&f<191)super=1;
@@ -1131,7 +1181,7 @@ index 938b648..18947ee 100644
  #endif
          unsigned iai=(world.move==W_SMALL||world.move==W_BIG)&&e&&(e->common&0x04000000u);
          unsigned foresight=world_foresight_invulnerable(f);
-@@ -365,12 +390,16 @@ static u32 world_damage(void *a)
+@@ -365,12 +412,16 @@ static u32 world_damage(void *a)
      unsigned incoming_stun=u16(a,0x3226),stun_before=word(a,0x2898);
      if(armored||super)*(uint16_t *)((uptr)a+0x3226)=0;
      if(super)log_event("world_super_hit",(u32)(uptr)a,world.source,(u32)real(a,FRAME),type);
@@ -1148,7 +1198,7 @@ index 938b648..18947ee 100644
  #if ML_WILDS_MOVES
      world_action_armor_depth-=action_armor;
  #endif
-@@ -521,7 +550,7 @@ static unsigned world_focus_thrust_heading(void *a,unsigned *aim)
+@@ -521,7 +572,7 @@ static unsigned world_focus_thrust_heading(void *a,unsigned *aim)
      if(owned)*aim=turn->yaw;
      return owned;
  }
@@ -1157,7 +1207,7 @@ index 938b648..18947ee 100644
  static unsigned crimson_split_heading,crimson_travel_heading;
  static unsigned world_crimson_bound(void *a)
  {
-@@ -708,6 +737,7 @@ static u32 world_focus_turn(void *a)
+@@ -708,6 +759,7 @@ static u32 world_focus_turn(void *a)
  #else
  #include "world_effects.inc"
  #endif
@@ -1165,7 +1215,7 @@ index 938b648..18947ee 100644
  static unsigned world_ready(void *a)
  {
      void *r=(void *)(uptr)word(a,0xf04+20);
-@@ -716,7 +746,7 @@ static unsigned world_ready(void *a)
+@@ -716,7 +768,7 @@ static unsigned world_ready(void *a)
      void *hdp=h?(void *)(uptr)word(h,0x64):0,*hts=s?(void *)(uptr)word(s,0x64):0;
  #if ML_WILDS_MOVES
      if(!bank||word(bank,0)!=0x00544d4c||u16(bank,6)<252||!hdp||!hts||
@@ -1174,7 +1224,7 @@ index 938b648..18947ee 100644
      for(unsigned i=0;i<sizeof(wilds_clips)/sizeof(*wilds_clips);++i)
          if(!word(bank,8+wilds_clips[i].slot*4))return 0;
  #endif
-@@ -724,12 +754,96 @@ static unsigned world_ready(void *a)
+@@ -724,12 +776,96 @@ static unsigned world_ready(void *a)
          hdp&&word(hdp,0)==0x00504448&&word(hdp,8)>=WORLD_HIT_COUNT&&
          hts&&word(hts,0)==0x00535448&&word(hts,8)>=WORLD_SHAPE_COUNT;
  }
@@ -1272,7 +1322,7 @@ index 938b648..18947ee 100644
      if(!(raw&PAD_FOCUS))return 0;
      unsigned owner_state=u16(a,STATE),owner_action=u16(a,ACTION);
      unsigned source=w_guild_source(owner_state,owner_action,u16(a,MOTION));
-@@ -774,7 +888,7 @@ static unsigned world_focus_replay(void *a,const WObservation *o,WDecision d)
+@@ -774,7 +910,7 @@ static unsigned world_focus_replay(void *a,const WObservation *o,WDecision d)
  #endif
  static void world_pay(void *a,WDecision d)
  {
@@ -1281,7 +1331,7 @@ index 938b648..18947ee 100644
  #if ML_WILDS_MOVES
      if(word(a,0x3330)==3){
          spend=0;
-@@ -790,8 +904,7 @@ static void world_pay(void *a,WDecision d)
+@@ -790,8 +926,7 @@ static void world_pay(void *a,WDecision d)
      }
  #endif
      if(d.rank_delta)((void (*)(void *,int))(main_base+0x119ed98))(a,d.rank_delta);
@@ -1291,7 +1341,7 @@ index 938b648..18947ee 100644
      if(d.gauge_clear&&spend){put(a,0x2780,0);set_real(a,0x3334,0);}
      if(d.gauge_delta>0||(d.gauge_delta<0&&spend)){
          int next=(int)word(a,0x2780)+d.gauge_delta;put(a,0x2780,next<0?0:next>100?100:(unsigned)next);
-@@ -814,9 +927,6 @@ static void world_cleanup(void *a)
+@@ -814,9 +949,6 @@ static void world_cleanup(void *a)
      }
  #endif
      world_close_hit(a);world_counter_seen=0;world_detector_clear();
@@ -1301,7 +1351,7 @@ index 938b648..18947ee 100644
      if(world_bound&&world_bound_actor==(u32)(uptr)a){
          set_real(a,0x50c,1);set_real(a,0x14b0,1);
          for(unsigned i=0;i<4;++i)put(a,0x1100+4*i,0);
-@@ -828,9 +938,10 @@ static float world_motion_speed(void *a,const WEvent *e)
+@@ -828,9 +960,10 @@ static float world_motion_speed(void *a,const WEvent *e)
  #if ML_WILDS_MOVES
      /* MOT279 settles into its release stance at frame 180. */
      if(world.source==908||world.source==915)
@@ -1313,7 +1363,7 @@ index 938b648..18947ee 100644
      /* Both Iai follow-ups open at frame 80. Retain the authored hold clock. */
      if(world.move==W_SHEATHE&&real(a,FRAME)<80){
          speed*=80.0f/48.0f;
-@@ -838,7 +949,7 @@ static float world_motion_speed(void *a,const WEvent *e)
+@@ -838,7 +971,7 @@ static float world_motion_speed(void *a,const WEvent *e)
      return speed;
  }
  #if ML_WILDS_MOVES
@@ -1322,7 +1372,7 @@ index 938b648..18947ee 100644
  #endif
  #if ML_WILDS_MOVES
  static void world_blade_hitstop(void *a,unsigned strength)
-@@ -848,7 +959,7 @@ static void world_blade_hitstop(void *a,unsigned strength)
+@@ -848,7 +981,7 @@ static void world_blade_hitstop(void *a,unsigned strength)
      *(unsigned char *)((uptr)a+0x3020+0x57)=(unsigned char)strength;
  }
  #endif
@@ -1331,7 +1381,7 @@ index 938b648..18947ee 100644
  {
      unsigned helm=e->hit==82&&(world.move==W_DOWN||world.move==W_LAND);
      /* Source COL lingering flag/e4 is a1.5-simulation-frame per-target
-@@ -868,9 +979,9 @@ static void world_hit_tick(void *a,const WEvent *e)
+@@ -868,9 +1001,9 @@ static void world_hit_tick(void *a,const WEvent *e)
  #endif
      ((void (*)(void *,u32,u32,u32))(main_base+0x2b7240))(a,0,row,0);
      world_attack_id=u16(a,0x3054);world_attack_actor=(u32)(uptr)a;world_attack_owned=1;
@@ -1343,7 +1393,7 @@ index 938b648..18947ee 100644
      if(!helm){
          unsigned strength=world.move==W_BIG?26:world.move==W_THRUST?12:18;
          world_blade_hitstop(a,strength);
-@@ -890,25 +1001,32 @@ static void world_hit_tick(void *a,const WEvent *e)
+@@ -890,25 +1023,32 @@ static void world_hit_tick(void *a,const WEvent *e)
  static uint64_t wilds_fired;
  static unsigned wilds_hit_source,wilds_hit_generation,wilds_window=~0u;
  _Static_assert(sizeof(wilds_strikes)/sizeof(*wilds_strikes)<=64,"Wilds strike mask capacity");
@@ -1382,7 +1432,7 @@ index 938b648..18947ee 100644
                  /* Keep the inner sphere at the grip. Spread the four blade
                   * samples from 20..110 to their move-specific reach along the posed edge. */
                  float grip=x[axis]+(y[axis]-x[axis])*t;
-@@ -917,22 +1035,23 @@ static void wilds_blade_shape(void *a,const WildsClip *clip,float frame)
+@@ -917,22 +1057,23 @@ static void wilds_blade_shape(void *a,const WildsClip *clip,float frame)
              set_real(bank,offset+sphere*48+16+axis*4,point);
          }
      }
@@ -1410,7 +1460,7 @@ index 938b648..18947ee 100644
      unsigned offset=word(bank,20+WILDS_SHAPE*8);
      float x=pose[4],y=pose[5],z=pose[6],w=pose[7];
      float axis[3]={2*(x*z+y*w),2*(y*z-x*w),1-2*(x*x+y*y)};
-@@ -949,11 +1068,12 @@ static void wilds_equipment_shape(void *a)
+@@ -949,11 +1090,12 @@ static void wilds_equipment_shape(void *a)
      }
      for(unsigned i=0;i<4;++i){
          unsigned at=offset+i*48;put(bank,at,joint|(joint<<16));
@@ -1425,7 +1475,7 @@ index 938b648..18947ee 100644
  }
  static void wilds_hit_tick(void *a)
  {
-@@ -965,7 +1085,8 @@ static void wilds_hit_tick(void *a)
+@@ -965,7 +1107,8 @@ static void wilds_hit_tick(void *a)
      }
      float frame=real(a,FRAME);unsigned active=~0u;
      world_finish_focus_burst(a,frame);
@@ -1435,7 +1485,7 @@ index 938b648..18947ee 100644
      if(world.source==917)wilds_equipment_shape(a);
      for(unsigned i=0;i<sizeof(wilds_strikes)/sizeof(*wilds_strikes);++i){
          const WildsStrike *strike=wilds_strikes+i;
-@@ -978,6 +1099,11 @@ static void wilds_hit_tick(void *a)
+@@ -978,6 +1121,11 @@ static void wilds_hit_tick(void *a)
      const WildsStrike *strike=wilds_strikes+active;
      unsigned tier=world.wilds_tier;if(tier<1||tier>4)tier=1;
      unsigned row=strike->row+(strike->tiered?tier-1:0);
@@ -1447,7 +1497,7 @@ index 938b648..18947ee 100644
      if(world.source==917&&word(a,0x3330)!=3)row=WILDS_ROUND_NORMAL_ROW;
      ((void (*)(void *,u32,u32,u32))(main_base+0x2b7240))(a,0,row,0);
      world_attack_id=u16(a,0x3054);world_attack_actor=(u32)(uptr)a;world_attack_owned=1;world_hit=(int)row;
-@@ -996,12 +1122,13 @@ static void wilds_hit_tick(void *a)
+@@ -996,12 +1144,13 @@ static void wilds_hit_tick(void *a)
          set_real(a,0x3020+0x68,6.0f);
          *(unsigned char *)((uptr)a+0x3020+0x6c)=mv>=35?4:mv>=20?3:2;
      }
@@ -1463,7 +1513,7 @@ index 938b648..18947ee 100644
  #endif
      wilds_fired|=UINT64_C(1)<<active;
      log_event("wilds_hit_open",(u32)(uptr)a,world.source,row,(u32)frame);
-@@ -1017,6 +1144,9 @@ static void world_commit(void *a,WDecision d)
+@@ -1017,6 +1166,9 @@ static void world_commit(void *a,WDecision d)
  #endif
      unsigned owned_abort=d.kind==W_ABORT && world_bound && world_bound_actor==(u32)(uptr)a &&
          u16(a,STATE)==16 && u16(a,ACTION)==world_bound_action;
@@ -1473,7 +1523,7 @@ index 938b648..18947ee 100644
      unsigned gauge_before=word(a,0x2780);
      world_pay(a,d);
  #if ML_WILDS_MOVES
-@@ -1063,7 +1193,7 @@ static void world_commit(void *a,WDecision d)
+@@ -1063,7 +1215,7 @@ static void world_commit(void *a,WDecision d)
          world_r_gate.owner_state==u16(a,STATE)&&world_r_gate.owner_action==u16(a,ACTION)&&
          world_r_gate.motion==u16(a,MOTION)&&(d.kind==W_NATIVE||d.kind==W_NATIVE_R);
      if(native_tap){
@@ -1482,7 +1532,7 @@ index 938b648..18947ee 100644
              world_r_gate.active=0;return;
          }
          d.kind=W_NATIVE;d.native_action=world_r_gate.action;
-@@ -1083,10 +1213,11 @@ static void world_commit(void *a,WDecision d)
+@@ -1083,10 +1235,11 @@ static void world_commit(void *a,WDecision d)
          if(d.move==W_LAND)world_helm_landed=world_elapsed;
  #endif
  #if ML_WORLD_PRESENTATION && WORLD_AUDIO_GROUND
@@ -1497,7 +1547,21 @@ index 938b648..18947ee 100644
          if(d.move==W_THRUST&&world.rank)world_audio_epv(a,25505,point);
  #endif
  #if ML_WILDS_MOVES
-@@ -1110,7 +1241,10 @@ static void world_commit(void *a,WDecision d)
+@@ -1098,6 +1251,13 @@ static void world_commit(void *a,WDecision d)
+             if(world_helm_count)world_audio_tail(a,1,world_helm_sound_point);
+         }
+ #endif
++#endif
++#if ML_WILDS_MOVES
++        if(d.move==W_THRUST){
++            helm_guard_actor=(u32)(uptr)a;helm_guard_epoch=byte(a,AREA);
++            helm_guard_ticks=10*60;
++        }else if((d.move==W_RISE&&word(a,0x3330)!=3)||d.move<W_RISE||d.move>W_LAND)
++            helm_guard_ticks=0;
+ #endif
+         if(d.move==W_RISE){
+             world_helm_tier=world.rank;
+@@ -1110,7 +1270,10 @@ static void world_commit(void *a,WDecision d)
          }
          if(d.move==W_BIG){world_follow[7]=(WFollow){0};world_camera_begin(a);}
  #if ML_WILDS_MOVES
@@ -1509,7 +1573,7 @@ index 938b648..18947ee 100644
          if(d.source==918){
              if(world.valor_foresight){
                  unsigned before=word(a,10128);
-@@ -1121,11 +1255,19 @@ static void world_commit(void *a,WDecision d)
+@@ -1121,11 +1284,19 @@ static void world_commit(void *a,WDecision d)
  #endif
      }
      world_cleanup(a);ml_reset(&controller);
@@ -1529,7 +1593,7 @@ index 938b648..18947ee 100644
  #if ML_WILDS_MOVES
          unsigned from=roll_turn.actor==(u32)(uptr)a&&roll_turn.epoch==byte(a,AREA)?
              roll_turn.yaw:u16(a,HEADING);
-@@ -1143,15 +1285,28 @@ static void world_commit(void *a,WDecision d)
+@@ -1143,15 +1314,28 @@ static void world_commit(void *a,WDecision d)
          put(a,HEADING,d.heading);put(a,TARGET,d.heading);
          if(d.kind==W_ENTER){
  #if ML_WILDS_MOVES
@@ -1561,7 +1625,7 @@ index 938b648..18947ee 100644
      }else if(d.kind==W_NATIVE){
          log_event("world_native_follow",(u32)(uptr)a,d.native_action,u16(a,MOTION),(u32)real(a,FRAME));
          unsigned flags=d.native_action>=16?0x8000:0;
-@@ -1166,7 +1321,7 @@ static void world_commit(void *a,WDecision d)
+@@ -1166,7 +1350,7 @@ static void world_commit(void *a,WDecision d)
          world_loop_heading(a);
      }else if(d.kind==W_NATIVE_R){
          unsigned current=u16(a,ACTION),previous=u16(a,0x250c),gauge=word(a,0x2780),target=0;
@@ -1570,7 +1634,7 @@ index 938b648..18947ee 100644
  #if ML_WILDS_MOVES
          if(word(a,0x3330)==3)available=100;
  #endif
-@@ -1196,7 +1351,7 @@ static void world_commit(void *a,WDecision d)
+@@ -1196,7 +1380,7 @@ static void world_commit(void *a,WDecision d)
          virtual_request(a,1,6,12);
      }
      else if(d.kind==W_IDLE)((void (*)(void *,u32,u32,u32,u32,u32,u32))(main_base+0x2b6e94))(a,0,0,0,0,0,0);
@@ -1579,7 +1643,7 @@ index 938b648..18947ee 100644
      --submitting;
  }
  #if ML_WILDS_MOVES
-@@ -1238,9 +1393,8 @@ static unsigned world_potion_draw(WObservation *o)
+@@ -1238,9 +1422,8 @@ static unsigned world_potion_draw(WObservation *o)
      if((o->state==1&&b->native_action==1)||(o->state==16&&b->native_action==0)){
          if(!o->drawn)return 0;
          potion_draw.actor=0;
@@ -1591,7 +1655,7 @@ index 938b648..18947ee 100644
          return 1;
      }
      potion_draw.actor=0;
-@@ -1283,7 +1437,7 @@ static unsigned valor_guard_pad(unsigned bits)
+@@ -1283,7 +1466,7 @@ static unsigned valor_guard_pad(unsigned bits)
         (int16_t)u16(a,HP)<=0||!(byte(a,DRAWN)&1)){
          valor_guard.early_r=0;return 0;
      }
@@ -1600,7 +1664,7 @@ index 938b648..18947ee 100644
      if(bits&PAD_R){valor_guard.released=0;return 0;}
      /* Expose the physical release before replay, even when the player
       * held the tap until the native recovery window was already open. */
-@@ -1298,6 +1452,7 @@ static unsigned valor_follow_input(unsigned keys,unsigned edge)
+@@ -1298,6 +1481,7 @@ static unsigned valor_follow_input(unsigned keys,unsigned edge)
  {
      return ((edge&PAD_X)&&keys==ML_X)||
             ((edge&(PAD_X|PAD_R))&&keys==(ML_R|ML_X))||
@@ -1608,7 +1672,7 @@ index 938b648..18947ee 100644
             ((edge&0x6200u)&&keys==(ML_R|ML_A));
  }
  static void valor_guard_input(void *a,unsigned keys,unsigned edge)
-@@ -1381,22 +1536,125 @@ static void valor_link_collect(void *a,const MLObservation *b,unsigned edge,unsi
+@@ -1381,22 +1565,125 @@ static void valor_link_collect(void *a,const MLObservation *b,unsigned edge,unsi
      }
  }
  #endif
@@ -1644,7 +1708,7 @@ index 938b648..18947ee 100644
 +    }
 +    unsigned counter_packet=state==16&&(w_guild_attack(action)||action==GU_RECKONING);
 +    unsigned recovery=w_native_counter_stage(current,current_action,raw.motion,raw.phase,
-+                                               raw.animation_frame,crimson_available(a));
++                                               raw.animation_frame,1);
 +    if(!world.move&&recovery&&counter_packet&&world_ready(a)&&!(word(a,AIR)&0x400)){
 +        if(w_fresh_counter(world.finisher_sheathe_keys,raw.held)||world.counter_pending)return 1;
 +        if((raw.held==ML_R||raw.held==ML_A)&&(world.keys.waiting&raw.held)){
@@ -1736,7 +1800,7 @@ index 938b648..18947ee 100644
              world_wilds_pending=W_SLIDE;
              return 1;
          }
-@@ -1405,8 +1663,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1405,8 +1692,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      unsigned upper=state==16&&(action<=7||action==25||action==41);
      unsigned spirit_one=!world.move&&w_spirit_one_crimson_source(current,current_action,u16(a,MOTION));
      if(!spirit_one&&!world.move&&red_roll&&upper&&(byte(a,DRAWN)&1)&&!(word(a,AIR)&0x400)&&
@@ -1746,7 +1810,7 @@ index 938b648..18947ee 100644
          if(!wilds_roll_x&&!wilds_roll_input){
              MLObservation input=observe(a,1);
              world_roll_crimson_input(&input);
-@@ -1440,15 +1697,13 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1440,15 +1726,13 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
          unsigned valid=((current==1||current==2)&&act<=5)||(current==16&&act<154&&real(a,FRAME)>=24);
          unsigned mv=0;
          if(byte(a,DRAWN)&1){
@@ -1765,7 +1829,7 @@ index 938b648..18947ee 100644
          }
          if(mv){world_wilds_pending=mv;log_event("wilds_input_reserve",(u32)(uptr)a,mv,state,action);return 1;}
      }
-@@ -1517,7 +1772,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1517,7 +1801,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
          unsigned ordinary=src==1||src==101||src==102||src==103||src==105||src==107;
          unsigned window=src==1||(ordinary&&real(a,FRAME)>=24);
          const WEvent *cancel=w_event(src,real(a,FRAME));
@@ -1774,7 +1838,7 @@ index 938b648..18947ee 100644
          unsigned packet=(state==16&&w_guild_attack(action))||((state==1||state==2)&&action<=14);
          if(packet&&window&&raw.held==(ML_R|ML_B)&&
             (src==1||sheath))return 1;
-@@ -1542,7 +1797,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1542,7 +1826,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
              return 1;
          }
          if(state==16&&spirit_packet&&raw.held==ML_R&&w_spirit_charge_source(src))return 1;
@@ -1783,7 +1847,7 @@ index 938b648..18947ee 100644
          if(u16(a,ACTION)==30&&src==109&&((state==1||state==2)&&action<=5)&&
             real(a,FRAME)<w_clip(109)->length-1)return 1;
      }
-@@ -1573,6 +1828,17 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1573,6 +1857,17 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      if(world.move){
          if((attack||roll||((state==1||state==2)&&action<=5)) &&
             u16(a,STATE)==16 && u16(a,ACTION)==w_action(world.move))return 1;
@@ -1801,7 +1865,7 @@ index 938b648..18947ee 100644
          world_physics_end(a);
          world_commit(a,w_leave(&world));world_cleanup(a);
          world.controls=(WControls){0};
-@@ -1594,7 +1860,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1594,7 +1889,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      if(attack&&(action==16||action==17||action==18||action==19||action==26||action==27)&&
         w_guild_spirit_opener(u16(a,ACTION),u16(a,MOTION),u16(a,0x250c)))return 1;
      unsigned partner=held&(ML_X|ML_A|ML_B|ML_Y|ML_ZR);
@@ -1813,7 +1877,7 @@ index 938b648..18947ee 100644
      /* GU can offer the draw-upper before the command VM sees this pad
       * sample. The same thrust's X edge owns the native combo upper. */
      if(attack&&action==7&&((source==105&&u16(a,ACTION)==4)||(source==112&&u16(a,ACTION)==22))&&event&&
-@@ -1609,11 +1878,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1609,11 +1907,10 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
         world_r_gate.generation==bind_generation&&world_r_gate.motion==u16(a,MOTION)&&
         world_r_gate.owner_action==u16(a,ACTION))return 1;
      if(event&&world.input_motion==u16(a,MOTION)&&!(held&(ML_Y|ML_ZR))){
@@ -1827,7 +1891,7 @@ index 938b648..18947ee 100644
              if(world.gu_chord_wait==id||w_command_has(controls->commands.buffered,id)||
                 w_command_has(controls->commands.executable,id))return 1;
          }
-@@ -1624,10 +1892,9 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1624,10 +1921,9 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      if(attack&&(u16(a,STATE)==16||source==1)&&event&&world.input_motion==u16(a,MOTION)&&
         (held==ML_R||held==ML_X||held==ML_A)){
          unsigned button=held==ML_R?2:held==ML_A?1:0;
@@ -1841,7 +1905,7 @@ index 938b648..18947ee 100644
          const WButton *key=controls->buttons+button;
          /* Idle has the global execute bit, not per-command TIML bits. */
          if(source==1)open=held==ML_R||held==ML_X;
-@@ -1640,12 +1907,8 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1640,12 +1936,8 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
      }
      if(!(held&ML_R))return 0;
      if(source==1)return partner==ML_X;
@@ -1856,7 +1920,7 @@ index 938b648..18947ee 100644
  #else
      if(world.move){
          if((state==1&&action<=14)||state==2||state==16)return 1;
-@@ -1744,7 +2007,22 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1744,7 +2036,22 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
      /* Fresh physical chords only. State, resource, red-rank and gauge gates
       * are validated again by w_wilds_enter when the request is committed. */
@@ -1880,7 +1944,7 @@ index 938b648..18947ee 100644
      if(wilds_input_actor!=(u32)(uptr)a||wilds_input_epoch!=byte(a,AREA)){
          wilds_input_actor=(u32)(uptr)a;wilds_input_epoch=byte(a,AREA);edge=world_wilds_pending=0;
          wilds_roll_x=wilds_roll_input=0;wilds_roll_tail=0;wilds_focus_active=0;
-@@ -1758,7 +2036,11 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1758,7 +2065,11 @@ static unsigned world_update(void *a,const MLObservation *b)
          (int16_t)u16(a,HP)>0&&world_ready(a)&&b->simulation_delta>0&&
          (((state==1||state==2)&&action<=5)||(state==16&&action<154&&real(a,FRAME)>=24));
       unsigned rolling=w_native_roll(state,action);
@@ -1893,7 +1957,7 @@ index 938b648..18947ee 100644
          wilds_roll_tail=0;wilds_roll_x=0;
       }else if(rolling){
          wilds_roll_tail=.24f;
-@@ -1766,26 +2048,38 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1766,26 +2077,38 @@ static unsigned world_update(void *a,const MLObservation *b)
          wilds_roll_tail-=b->simulation_delta/60;
          if(wilds_roll_tail<=0)wilds_roll_x=0;
       }
@@ -1937,7 +2001,7 @@ index 938b648..18947ee 100644
       if(on&&!chord_last){static const unsigned seq[]={W_FORESIGHT,W_THRUST,W_SHEATHE,W_SMALL,W_BIG,W_DOWN,
              W_CHIJIN,W_CHARGE,W_SLIDE,W_RELEASE,W_FOCUS};
          world_debug_pending=seq[idx%11u];++idx;
-@@ -1802,8 +2096,10 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1802,8 +2125,10 @@ static unsigned world_update(void *a,const MLObservation *b)
      world_fx_tick(a);
      WObservation o={.base=*b,.state=u16(a,STATE),.previous_weapon_action=u16(a,0x250c),.drawn=byte(a,DRAWN)&1,
          .alive=(int16_t)u16(a,HP)>0,.grounded=!(word(a,AIR)&0x400),
@@ -1949,7 +2013,7 @@ index 938b648..18947ee 100644
      static unsigned rank_actor,rank_previous;
      if(rank_actor!=(u32)(uptr)a||o.rank!=3||!o.alive){
          red_rounds=red_iai_used=0;red_aura_hold=0;
-@@ -1833,23 +2129,25 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1833,23 +2158,25 @@ static unsigned world_update(void *a,const MLObservation *b)
      }else if((b->held==ML_R&&(edge&PAD_R))||(b->held==ML_Y&&(edge&PAD_Y))){
          focus_lead_time=.10f;
      }
@@ -1978,7 +2042,7 @@ index 938b648..18947ee 100644
      o.valor_draw_cancel=draw_cancel;
      if(draw_cancel)link_pose=5;
      if(link_pose){
-@@ -1891,11 +2189,8 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1891,11 +2218,8 @@ static unsigned world_update(void *a,const MLObservation *b)
          if(b->magnitude<50){put(a,HEADING,aim);put(a,TARGET,aim);}
          o.base.heading=aim;
      }
@@ -1991,7 +2055,7 @@ index 938b648..18947ee 100644
  #endif
      o.contact=world_contact(a);
  #if ML_WILDS_MOVES
-@@ -1943,7 +2238,7 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1943,7 +2267,7 @@ static unsigned world_update(void *a,const MLObservation *b)
          }
          if(!o.alive||!o.resources_ready){world_normal_gauge_tenths=0;world_regen=world_helm_regen=world_armor=0;world_follow_clear();}
      }
@@ -2000,7 +2064,7 @@ index 938b648..18947ee 100644
          ((void (*)(void *,u32,u32,u32))(main_base+0x282fd8))(a,0,0,0);
          *(unsigned char *)((uptr)a+5)=1;
          /* GU53a1dc adds two frames to positive blends and otherwise sets
-@@ -1994,7 +2289,8 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -1994,7 +2318,8 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
      /* Movement intent cannot rotate a landing/release or a committed round
       * away from the contact that started the chain. */
@@ -2010,7 +2074,7 @@ index 938b648..18947ee 100644
          put(a,HEADING,world.heading);put(a,TARGET,world.heading);o.base.heading=world.heading;
      }
  #endif
-@@ -2046,8 +2342,34 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2046,8 +2371,34 @@ static unsigned world_update(void *a,const MLObservation *b)
          log_event("wilds_potion_draw",(u32)(uptr)a,o.state,o.base.native_action,o.base.magnitude);
      }
  #endif
@@ -2045,7 +2109,7 @@ index 938b648..18947ee 100644
      if(d.kind==W_NATIVE&&d.native_action==130&&d.valor_slide){
          valor_link=(__typeof__(valor_link)){.actor=a,.epoch=byte(a,AREA),.owner=130,.moving=1,
              .heading=d.valor_slide_heading,.input_heading=d.valor_slide_input};
-@@ -2072,14 +2394,23 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2072,14 +2423,23 @@ static unsigned world_update(void *a,const MLObservation *b)
              request.base.magnitude=wilds_slide_draw_input.magnitude;
          }
          wilds_roll_input=0;
@@ -2071,7 +2135,7 @@ index 938b648..18947ee 100644
      if(world_debug_pending){unsigned mv=world_debug_pending;world_debug_pending=0;
          d=w_debug_enter(&world,&o,mv);
  #if ML_WILDS_MOVES
-@@ -2093,11 +2424,6 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2093,11 +2453,6 @@ static unsigned world_update(void *a,const MLObservation *b)
      world_commit(a,d);w_input_finish(&world,&o,d);
  #if ML_WILDS_MOVES
      if(wilds_clip(world.source))wilds_hit_tick(a);
@@ -2083,7 +2147,7 @@ index 938b648..18947ee 100644
      /* Horizontal root is authored in the LMT's native usage-4 track. */
  #endif
  #if ML_WILDS_MOVES && ML_WORLD_INPUT_VM
-@@ -2117,7 +2443,8 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2117,7 +2472,8 @@ static unsigned world_update(void *a,const MLObservation *b)
  #endif
      if(world_r_gate.active){
          unsigned valid=world_r_gate.actor==(u32)(uptr)a&&world_r_gate.epoch==byte(a,AREA)&&
@@ -2093,7 +2157,7 @@ index 938b648..18947ee 100644
              u16(a,MOTION)==world_r_gate.motion&&bind_generation==world_r_gate.generation;
  #if ML_WORLD_INPUT_VM
          if(!valid||u16(a,STATE)!=world_r_gate.owner_state||u16(a,ACTION)!=world_r_gate.owner_action)world_r_gate.active=0;
-@@ -2129,6 +2456,15 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2129,6 +2485,15 @@ static unsigned world_update(void *a,const MLObservation *b)
                  ++submitting;virtual_request(a,16,world_r_gate.action,world_r_gate.flags);--submitting;
                  return 1;
              }
@@ -2109,7 +2173,7 @@ index 938b648..18947ee 100644
          }else if(!world.controls.buttons[world_r_gate.button].waiting&&!world.gu_chord_wait){
              unsigned action=world_r_gate.action,flags=world_r_gate.flags;world_r_gate.active=0;
              ++submitting;virtual_request(a,16,action,flags);--submitting;
-@@ -2162,10 +2498,12 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2162,10 +2527,12 @@ static unsigned world_update(void *a,const MLObservation *b)
  #if ML_WILDS_MOVES
              /* 我们的五招用自己那套判定（wilds_rows）；他这套按事件开行会 world_close_hit
               * 把刚开的行关掉（练气解放"掉刃色但没伤害"就是这个），所以这里跳过。 */
@@ -2125,7 +2189,7 @@ index 938b648..18947ee 100644
  #endif
          }
          world_physics_tick(a);
-@@ -2173,7 +2511,7 @@ static unsigned world_update(void *a,const MLObservation *b)
+@@ -2173,7 +2540,7 @@ static unsigned world_update(void *a,const MLObservation *b)
              set_real(a,0x50c,0);set_real(a,0x14b0,0);
          }
      }
@@ -2134,7 +2198,7 @@ index 938b648..18947ee 100644
  }
  #include "world_damage_compat.h"
  static unsigned world_install(void)
-@@ -2187,10 +2525,8 @@ static unsigned world_install(void)
+@@ -2187,10 +2554,8 @@ static unsigned world_install(void)
      const u32 entries[][3]={
  #if ML_WILDS_MOVES
          {0xbac204,0xe92d4ff0u,0xe24dd014u},
@@ -2146,7 +2210,7 @@ index 938b648..18947ee 100644
          {0x2807a0,0xe30114a4u,0xe7902001u},
  #endif
          {0x2a309c,0xe92d4070u,0xe1a04000u},
-@@ -2245,18 +2581,10 @@ static unsigned world_install(void)
+@@ -2245,18 +2610,10 @@ static unsigned world_install(void)
      forge_hook_create((void *)(main_base+0x2b7240),(void *)world_open_hit,(void **)&world_original_open_hit);
      if(!world_original_open_hit)return 0;
      forge_hook_create((void *)(main_base+0xbac204),(void *)world_pad_map,(void **)&world_original_pad_map);
@@ -2309,7 +2373,7 @@ index c9c23fe..6ff93a1 100644
      if(world.source>=170&&world.source<=174)return;
      if((world.source>=901&&world.source<=918)||(world.source>=W_CRIMSON_STATIONARY&&world.source<=W_CRIMSON_SPIN)){
 diff --git a/integration/c/world_command_driver.inc b/integration/c/world_command_driver.inc
-index 47cb139..e8e192c 100644
+index 47cb139..ef0f497 100644
 --- a/integration/c/world_command_driver.inc
 +++ b/integration/c/world_command_driver.inc
 @@ -44,10 +44,31 @@ static int world_query_node(WGroundQuery *q,unsigned node)
@@ -2455,7 +2519,7 @@ index 47cb139..e8e192c 100644
          if(held==ML_R){
              if(frame>=70&&s->iai_follow_wait<=-.50f)return wilds_charge(s,&next,3);
              return (WDecision){0};
-@@ -226,6 +287,79 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -226,6 +287,85 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
  {
      const MLObservation *b=&o->base;
  #if ML_WILDS_MOVES
@@ -2469,8 +2533,8 @@ index 47cb139..e8e192c 100644
 +    unsigned counter_stage=0;
 +    if(!s->move){
 +        counter_stage=w_native_counter_stage(o->state,b->native_action,b->motion,b->phase,
-+                                             b->animation_frame,o->rank==3);
-+    }else if(s->move==W_GROUND&&s->source==109&&o->rank==3&&o->drawn){
++                                             b->animation_frame,1);
++    }else if(s->move==W_GROUND&&s->source==109&&o->drawn){
 +        unsigned cancel=s->red_foresight_chain?50:62;
 +        counter_stage=b->animation_frame>=cancel?3:b->animation_frame+4>=cancel?1:0;
 +    }else if(s->source==917&&o->drawn&&b->animation_frame<W_ROUND_SHEATHE_FRAME){
@@ -2495,7 +2559,13 @@ index 47cb139..e8e192c 100644
 +        s->counter_pending=1;
 +    if(s->counter_pending){
 +        s->finisher_sheathe_keys=b->held;
-+        if(counter_stage&2)return enter(s,o,W_FORESIGHT,counter_keys);
++        if(counter_stage&2){
++            s->counter_pending=0;
++            if(o->rank!=3&&(native_round||s->source==109||s->source==917||
++               (!s->move&&b->native_action==GU_RECKONING&&b->motion==0x5ba)))
++                return (WDecision){0};
++            return enter(s,o,W_FORESIGHT,counter_keys);
++        }
 +        return (WDecision){0};
 +    }
 +    unsigned owner=sakura_cut?0x703:finisher?(s->move?0x10000u|s->source:b->motion):0;
@@ -2535,7 +2605,7 @@ index 47cb139..e8e192c 100644
      if(s->move==W_CHIJIN&&s->source!=906&&s->source!=907&&b->animation_frame<=8){
          if(b->held==(ML_R|ML_X)&&!s->spirit_crimson_repeat)
              return enter(s,o,W_THRUST,b->held);
-@@ -240,6 +374,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -240,6 +380,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      unsigned spirit_one=!s->move&&w_spirit_one_crimson_source(o->state,b->native_action,b->motion);
      unsigned native_spirit=!s->move&&w_native_spirit_one(o->state,b->native_action);
      unsigned prep=native_spirit&&!spirit_one;
@@ -2544,7 +2614,7 @@ index 47cb139..e8e192c 100644
      unsigned red_native=!s->move&&o->rank==3&&o->grounded&&o->state==16&&
          (spirit_one||prep||w_valor_chord(o->state,b->native_action,b->motion,100000.f,ML_X,0)==W_CHIJIN);
      unsigned previous=s->spirit_crimson_held;
-@@ -254,14 +390,15 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -254,14 +396,15 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
          s->spirit_crimson_motion=b->motion;
          if((b->held&~(ML_R|ML_X))||(!(spirit_one||prep)&&(b->held&ML_R)))
              s->spirit_crimson_pending=0;
@@ -2562,7 +2632,7 @@ index 47cb139..e8e192c 100644
                  w_valor_chord(o->state,b->native_action,b->motion,b->animation_frame,ML_X,0)==W_CHIJIN;
              if(!ready||(!carried&&s->spirit_crimson_confirm>0))return (WDecision){0};
              WObservation next=*o;
-@@ -283,7 +420,17 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -283,7 +426,17 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      if(!s->move&&s->wilds_charge_link&&(o->state==1||o->state==2)&&b->native_action<=5&&
         b->held==ML_R&&o->grounded)return wilds_bridge(s,o,1);
      if(o->valor&&!s->move){
@@ -2581,7 +2651,7 @@ index 47cb139..e8e192c 100644
          if(!o->grounded||!o->valor_move)return (WDecision){0};
          if(o->valor_move==W_FOCUS||o->valor_move==W_SLIDE||o->valor_move==W_CHIJIN)return w_wilds_enter(s,o,o->valor_move);
          return enter(s,o,o->valor_move,b->held);
-@@ -307,7 +454,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -307,7 +460,8 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
  #endif
      unsigned idle=!s->move&&(o->state==1||o->state==2)&&b->native_action<=5&&o->grounded;
      unsigned air_spirit=!s->move&&o->state==16&&
@@ -2591,7 +2661,7 @@ index 47cb139..e8e192c 100644
            (b->motion==0x598||b->motion==0x568))||
           (b->native_action>=72&&b->native_action<=75&&
            ((b->motion>=0x599&&b->motion<=0x59c)||b->motion==0x568)));
-@@ -336,7 +484,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -336,7 +490,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
       * their ordinary ground-combo chord timers before starting Iai. */
      WDecision iai=w_iai_press(s,o);
      if(iai.kind!=W_KEEP)return iai;
@@ -2600,7 +2670,7 @@ index 47cb139..e8e192c 100644
      const float direction[4]={(float)b->input_heading,0,0,0};
      int delta=ml_heading_delta(b->input_heading,b->heading);
      /* Recorded GU input: positive quarter-turn is the hunter's left.
-@@ -345,12 +493,50 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -345,12 +499,50 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      unsigned facing=delta>=8192&&delta<=24576?3:
          delta<=-8192&&delta>=-24576?1:delta>24576||delta< -24576?2:0;
      if(s->input_motion!=b->motion){w_controls_bind(&s->controls);s->input_motion=b->motion;s->gu_chord_wait=0;}
@@ -2651,7 +2721,7 @@ index 47cb139..e8e192c 100644
      if(!s->move)world_guild_chords(s,b->held,permission);
      else s->gu_chord_wait=0;
      float frame=b->animation_frame;
-@@ -360,7 +546,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -360,7 +552,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      }
      if(s->move==W_SHEATHE){
  #if ML_WILDS_MOVES
@@ -2660,7 +2730,7 @@ index 47cb139..e8e192c 100644
              WDecision d=w_leave(s);d.kind=W_ROLL;d.sheathed_roll=1;
              d.heading=b->magnitude>=50?b->input_heading:b->heading;return d;
          }
-@@ -427,12 +613,12 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -427,12 +619,12 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
      unsigned node=s->move==W_GROUND?s->ground_node:world_source_node(source);
      if(node==0xffff||!o->grounded)return (WDecision){0};
      if(s->move==W_FORESIGHT){
@@ -2676,7 +2746,7 @@ index 47cb139..e8e192c 100644
          }
      }
      WGroundQuery query={.s=s,.o=o};
-@@ -445,7 +631,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
+@@ -445,7 +637,7 @@ static WDecision world_command_step(WState *s,const WObservation *o,unsigned sou
          WDecision d=world_route(s,o,(unsigned)next);
          if(d.kind!=W_KEEP)return d;
      }
@@ -2686,7 +2756,7 @@ index 47cb139..e8e192c 100644
          WDecision d=w_leave(s);d.kind=W_ROLL;
          d.heading=b->magnitude>=50?b->input_heading:b->heading;return d;
 diff --git a/integration/c/world_core.c b/integration/c/world_core.c
-index b781341..70e1ab0 100644
+index b781341..c9a6ae3 100644
 --- a/integration/c/world_core.c
 +++ b/integration/c/world_core.c
 @@ -94,10 +94,10 @@ unsigned w_source(unsigned motion)
@@ -3191,9 +3261,9 @@ index b781341..70e1ab0 100644
 +        if(!s->move)return d;
 +    }
 +#if ML_WILDS_MOVES
-+    if(d.rank_delta>0&&s->move==W_CHARGE&&source==917){
++    if(d.rank_delta>0&&((s->move==W_CHARGE&&(source==917||source==W_CRIMSON_SPIN))||(s->move==W_GROUND&&source==109))){
 +        WObservation promoted=*o;
-+        promoted.rank+=d.rank_delta;
++        if(promoted.rank<3)promoted.rank+=d.rank_delta;
 +        return combine(d,world_command_step(s,&promoted,source,e));
 +    }
 +#endif

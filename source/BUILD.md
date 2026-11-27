@@ -10,7 +10,7 @@ git apply "$integrationSource/changes.patch"
 Copy-Item "$integrationSource/yuzu_zr_input.h" integration/c/yuzu_zr_input.h
 ```
 
-Use the settings in integration/.cargo/config.toml. Set RUSTC_BOOTSTRAP=1 and enable ML_WORLD_COMBAT, ML_WORLD_INPUT_VM, ML_WORLD_PRESENTATION and ML_WILDS_MOVES. Set ML_DEBUG_FORCE=0 for distribution. Set ARM_GCC to a wrapper that runs zig cc -target arm-freestanding-eabi -Wno-unused-command-line-argument with the provided arguments. Build the release ELF with cargo +stable build --release in integration. Convert it with Forge's ARM32 ELF-to-NRO tool and place the result at `files/mod/romfs/nativeNX/plugins/mhw_ls_rebuild.nro` in the integration package. For v1.2.24, pair the NRO with the v1.2.12 Roundslash and world audio archives. The Roundslash archive can be rebuilt as described below. For the ARM32 converter, use an ARM-capable build of Forge's converter with the ELF input and NRO output paths.
+Use the settings in integration/.cargo/config.toml. Set RUSTC_BOOTSTRAP=1 and enable ML_WORLD_COMBAT, ML_WORLD_INPUT_VM, ML_WORLD_PRESENTATION and ML_WILDS_MOVES. Set ML_DEBUG_FORCE=0 for distribution. Set ARM_GCC to a wrapper that runs zig cc -target arm-freestanding-eabi -Wno-unused-command-line-argument with the provided arguments. Build the release ELF with cargo +stable build --release in integration. Convert it with Forge's ARM32 ELF-to-NRO tool and place the result at `files/mod/romfs/nativeNX/plugins/mhw_ls_rebuild.nro` in the integration package. For v1.2.25, pair the NRO with the v1.2.12 Roundslash and world audio archives. The Roundslash archive can be rebuilt as described below. For the ARM32 converter, use an ARM-capable build of Forge's converter with the ELF input and NRO output paths.
 
 ## Rebuild the v1.2.12 Roundslash archive
 
@@ -80,3 +80,7 @@ The script draws Xbox glyphs and uses the same Hunter Art slot 2 layout in both 
 ## Camera diagnostics
 
 The Yuzu log records eight consecutive player-camera updates every two simulation seconds while the local Long Sword hunter has a live viewport. The four hexadecimal fields of `camera_pose` are pitch and yaw (16 bits each), eye-to-hunter distance in sixteenths of a game unit, native state and action (16 bits each), and raw button bits with bit 31 set if the Iai controller wrote the camera in that update. The angles and distance are sampled after the native camera update. These samples, Iai turn requests and completions, and `helm_interrupt_exit` continue after the ordinary action log reaches its limit.
+
+## Timer and finisher regression
+
+In the patched source checkout, extract the block of integration/c/world_adapter.inc starting at `static unsigned world_contact(void *);` and ending immediately before `static int world_hit=` into shipping_timer.inc in a temporary directory. Compile test_helm_finisher.c and integration/c/moveset.c together using a host C compiler with assertions enabled. Add that directory, integration/c and wilds-port/tools to the include path. Run the resulting executable. It exercises the shipping timer hook with a simulated GU expiry callback, and the shipping controller with frame-by-frame inputs.
