@@ -16,7 +16,7 @@ index 3fe6ae7c..9c0fb3d8 100644
  #if ML_WORLD_INPUT_VM
  #if ML_WILDS_MOVES
 diff --git a/integration/c/world_adapter.inc b/integration/c/world_adapter.inc
-index 1c6d17ca..b1192088 100644
+index 1c6d17ca..e2e62841 100644
 --- a/integration/c/world_adapter.inc
 +++ b/integration/c/world_adapter.inc
 @@ -17,13 +17,29 @@ extern void ml_wilds_focus(unsigned);
@@ -58,18 +58,19 @@ index 1c6d17ca..b1192088 100644
      unsigned state=supported?u16(hunter,STATE):0,action=supported?u16(hunter,ACTION):0;
      unsigned drawn = supported && ((byte(hunter, DRAWN) & 1) ||
          (world.actor == (u32)(uptr)hunter && world.move) ||
-@@ -80,7 +97,18 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+@@ -80,7 +97,19 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
          uptr offset=pad_state-pad-0x1d0;
          unsigned slot=offset/0xb50;
          if(slot<9&&offset%0xb50==0){
 -            world_physical_y[slot]=bits&YUZU_PAD_X;
 +            if(restrained){
-+                /* GU needs the original buttons for struggling and items.
-+                 * Spend held attack buttons until the player releases them. */
++                /* Preserve stock struggle/item controls. Physical ZR still
++                 * belongs to the weapon layout and must not reach Quick Chat. */
 +                world_restraint_keys[slot]=bits&(YUZU_PAD_AX|YUZU_PAD_ZR|0xc000u);
 +                world_rt[slot]=(YuzuTrigger){0};
 +                world_ground_draw[slot]=(YuzuGroundDraw){0};
 +                world_rb[slot]=world_air_draw_pad[slot]=world_combat_pad[slot]=0;
++                if(bits&YUZU_PAD_ZR)put(packet,0,yuzu_zr_input(bits,0,0));
 +                return result;
 +            }
 +            world_restraint_keys[slot]&=bits;
@@ -78,7 +79,7 @@ index 1c6d17ca..b1192088 100644
              if(adept_run.actor&&adept_run.pad==(int)slot){
                  if(!supported||hunter!=adept_run.actor||byte(hunter,AREA)!=adept_run.epoch||
                     u16(hunter,STATE)!=1||u16(hunter,ACTION)!=GU_ADEPT_RUN)adept_run.actor=0;
-@@ -97,7 +125,7 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+@@ -97,7 +126,7 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
                      }
                  }
              }
@@ -87,7 +88,7 @@ index 1c6d17ca..b1192088 100644
              world_rb[slot]=(bits&0xffffu)==YUZU_PAD_R;
              if(world_rt[slot].blocked)mapping_bits&=~YUZU_PAD_ZR;
              unsigned airborne=supported&&world_spirit_airborne(hunter,state);
-@@ -109,7 +137,7 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
+@@ -109,7 +138,7 @@ static u32 world_pad_map(void *device,u32 meta,u32 pad_state,u32 sample)
              unsigned air=supported&&!drawn&&yuzu_aerial_spirit_draw_pose(state,airborne);
              unsigned native_bits=yuzu_aerial_spirit_input(mapping_bits,&world_rt[slot],air);
              world_air_draw_pad[slot]=native_bits!=mapping_bits;
@@ -96,7 +97,7 @@ index 1c6d17ca..b1192088 100644
              mapping_bits=native_bits;
          }
      }
-@@ -387,7 +415,7 @@ static u32 world_hp(void *a,int damage,void *result,u32 flags)
+@@ -387,7 +416,7 @@ static u32 world_hp(void *a,int damage,void *result,u32 flags)
  static u32 world_damage(void *a)
  {
      if(!local_supported(a)||world.actor!=(u32)(uptr)a||world.epoch!=byte(a,AREA)||
@@ -105,7 +106,7 @@ index 1c6d17ca..b1192088 100644
      unsigned packet=byte(a,0x31e0),type=byte(a,0x3216);
      unsigned eligible=packet&&(int16_t)u16(a,0x321c)>=0&&world_counter_type(type);
      if(packet&&world.move)log_event("world_incoming",(u32)(uptr)a,world.source,(u32)real(a,FRAME),type|(eligible<<16));
-@@ -840,6 +868,7 @@ static void world_type2_hunter_art_pad(void *a)
+@@ -840,6 +869,7 @@ static void world_type2_hunter_art_pad(void *a)
  
  static u32 world_player_input_filter(void *a,u32 b,u32 c,u32 d)
  {
@@ -113,7 +114,7 @@ index 1c6d17ca..b1192088 100644
      world_type2_hunter_art_pad(a);
      if(!local_long_sword(a))return world_original_player_input_filter(a,b,c,d);
      world_spirit_draw_actor=0;
-@@ -959,7 +988,7 @@ static unsigned world_focus_replay(void *a,const WObservation *o,WDecision d)
+@@ -959,7 +989,7 @@ static unsigned world_focus_replay(void *a,const WObservation *o,WDecision d)
  #if ML_WILDS_MOVES
  /* GU stores 1,000 Valor points. Its native functions own blue mode and the HUD. */
  enum { VALOR_COUNTER_BUILD=90, VALOR_COUNTER_REFILL=18,
@@ -122,7 +123,7 @@ index 1c6d17ca..b1192088 100644
  
  static void world_valor_meter(void *a,int points,unsigned action)
  {
-@@ -1629,10 +1658,47 @@ static void world_clear_player_input(void)
+@@ -1629,10 +1659,47 @@ static void world_clear_player_input(void)
      world_r_gate.active=focus_native.active=0;focus_lead_time=focus_strike_time=0;
  }
  #endif
@@ -171,7 +172,7 @@ index 1c6d17ca..b1192088 100644
  #if ML_WILDS_MOVES
      unsigned bits=world_pad_bits(),edge=bits&~wilds_input_previous;
      if(hunter_art_held()){
-@@ -1907,8 +1973,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
+@@ -1907,8 +1974,7 @@ static unsigned world_request(void *a,unsigned state,unsigned action,unsigned fl
              return 1;
          }
      }
@@ -181,7 +182,7 @@ index 1c6d17ca..b1192088 100644
  #if ML_WORLD_INPUT_VM
      unsigned attack=state==16&&w_guild_attack(action);
      /* Native stick+B uses side rolls 13/14 before the combo VM runs. */
-@@ -2120,6 +2185,11 @@ static void world_trace_party(void *local)
+@@ -2120,6 +2186,11 @@ static void world_trace_party(void *local)
  
  static unsigned world_update(void *a,const MLObservation *b)
  {
